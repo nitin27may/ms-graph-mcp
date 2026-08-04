@@ -193,9 +193,7 @@ class ProposeEmailInput(BaseModel):
         "Recipients are derived server-side from this event's attendee list."
     )
     subject: str = Field(description="Email subject line the user will see before sending.")
-    body_html: str = Field(
-        description="Email body as HTML the user will see before sending."
-    )
+    body_html: str = Field(description="Email body as HTML the user will see before sending.")
 
 
 @tool(

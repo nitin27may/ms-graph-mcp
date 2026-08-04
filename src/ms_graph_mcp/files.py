@@ -213,7 +213,9 @@ async def list_drive_item_children(
 
         from ms_graph_mcp.client import _headers  # type: ignore[attr-defined]
 
-        async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify, timeout=30
+        ) as client:
             while next_link:
                 resp = await client.get(next_link, headers=_headers(access_token))
                 resp.raise_for_status()

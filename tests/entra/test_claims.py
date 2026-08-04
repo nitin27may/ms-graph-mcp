@@ -54,9 +54,7 @@ def test_real_app_only_token_is_never_is_machine():
 
 
 def test_roles_string_is_coerced_to_set():
-    p = extract_principal(
-        {"preferred_username": "a@b.com", "scp": "x", "roles": "single-role"}
-    )
+    p = extract_principal({"preferred_username": "a@b.com", "scp": "x", "roles": "single-role"})
     assert p.roles == frozenset({"single-role"})
 
 

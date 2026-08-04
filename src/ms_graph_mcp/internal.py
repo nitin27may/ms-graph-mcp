@@ -45,7 +45,9 @@ class GraphRequestInput(BaseModel):
     full ``@odata.nextLink`` URL (only with ``GET``)."""
 
     method: str = Field(default="GET", description="HTTP method: GET / POST / PATCH / DELETE")
-    path: str = Field(description="Graph path (e.g. /me/drive/items/{id}/children) or full nextLink URL")
+    path: str = Field(
+        description="Graph path (e.g. /me/drive/items/{id}/children) or full nextLink URL"
+    )
     params: dict[str, Any] | None = Field(default=None, description="Query params for GET")
     body: dict[str, Any] | None = Field(default=None, description="JSON body for POST/PATCH")
 
@@ -106,7 +108,9 @@ class WalkDriveDescendantsInput(BaseModel):
         "Collapses the recursion + pagination into one call (the passthrough can't)."
     )
 )
-async def graph_walk_drive_descendants(params: WalkDriveDescendantsInput, context: dict) -> list[dict]:
+async def graph_walk_drive_descendants(
+    params: WalkDriveDescendantsInput, context: dict
+) -> list[dict]:
     token = context["access_token"]
     return [
         item
@@ -197,9 +201,13 @@ async def graph_get_group_drive(params: GetGroupDriveInput, context: dict) -> di
 
 
 class DownloadDriveItemInput(BaseModel):
-    drive_id: str = Field(description="Drive id (from get_group_drive or the user's personal drive id)")
+    drive_id: str = Field(
+        description="Drive id (from get_group_drive or the user's personal drive id)"
+    )
     item_id: str = Field(description="DriveItem id to download")
-    max_bytes: int = Field(default=5 * 1024 * 1024, description="Safety cap on download size (default 5 MiB)")
+    max_bytes: int = Field(
+        default=5 * 1024 * 1024, description="Safety cap on download size (default 5 MiB)"
+    )
 
 
 @tool(
@@ -232,9 +240,7 @@ async def graph_download_drive_item(params: DownloadDriveItemInput, context: dic
         raise ValueError(f"No downloadUrl for item {params.item_id} — item may be a folder")
 
     if size > params.max_bytes:
-        raise ValueError(
-            f"File is {size} bytes, exceeds the {params.max_bytes}-byte safety cap"
-        )
+        raise ValueError(f"File is {size} bytes, exceeds the {params.max_bytes}-byte safety cap")
 
     # Download via the pre-authorised URL (no auth header required)
     async with httpx.AsyncClient(
@@ -297,7 +303,9 @@ class FetchMessageAttachmentsInput(BaseModel):
         "Each item is {id, name, contentType, size, content_b64} (base64 bytes)."
     )
 )
-async def fetch_message_attachments(params: FetchMessageAttachmentsInput, context: dict) -> list[dict]:
+async def fetch_message_attachments(
+    params: FetchMessageAttachmentsInput, context: dict
+) -> list[dict]:
     items = await _fetch_message_attachments(
         context["access_token"], params.message_id, max_mb=params.max_mb
     )
@@ -327,7 +335,9 @@ class UpdateDriveItemContentInput(BaseModel):
         "base64-encoded). Returns the slimmed driveItem."
     )
 )
-async def graph_update_drive_item_content(params: UpdateDriveItemContentInput, context: dict) -> dict:
+async def graph_update_drive_item_content(
+    params: UpdateDriveItemContentInput, context: dict
+) -> dict:
     content = base64.b64decode(params.content_b64)
     return await _update_drive_item_content(
         context["access_token"],

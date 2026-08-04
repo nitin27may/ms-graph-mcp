@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same ref makes the older run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: nothing here needs write access, and no job in this
+# workflow may mint an OIDC token. Publishing lives in release.yml.
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --all-extras --dev
+
+      # --no-fix: [tool.ruff] sets fix = true for local runs. In CI a lint
+      # error must fail, not be silently rewritten into a passing tree.
+      - name: ruff check
+        run: uv run ruff check --no-fix .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+  test:
+    name: test (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - run: uv sync --all-extras --dev --python ${{ matrix.python-version }}
+
+      - name: pytest
+        run: uv run --python ${{ matrix.python-version }} pytest -q
+
+  build:
+    name: build + wheel smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      # The point of the src-layout (ADR 0001) is that a module missing from
+      # the wheel fails here rather than after release. Install the built
+      # artifact into a clean environment and exercise it — importing the
+      # package runs every domain module's @tool registration, and resolving
+      # the allowlist proves none of them went missing.
+      - name: Install the wheel into a clean venv and exercise it
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/python - <<'PY'
+          from ms_graph_mcp.allowlists import (
+              resolve_read_tools, resolve_write_tools, resolve_internal_tools,
+          )
+          read, write, internal = (
+              resolve_read_tools(), resolve_write_tools(), resolve_internal_tools(),
+          )
+          print(f"read={len(read)} write={len(write)} internal={len(internal)}")
+          assert len(read) == 42, f"expected 42 read tools, got {len(read)}"
+          assert len(write) == 4, f"expected 4 write tools, got {len(write)}"
+          assert len(internal) == 9, f"expected 9 internal tools, got {len(internal)}"
+          PY
+
+      - name: Verify console scripts are installed
+        run: |
+          test -x /tmp/smoke/bin/ms-graph-mcp
+          test -x /tmp/smoke/bin/ms-graph-mcp-http
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ github.sha }}
+          path: dist/
+          retention-days: 7

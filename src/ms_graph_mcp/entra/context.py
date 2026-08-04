@@ -15,9 +15,7 @@ if TYPE_CHECKING:  # avoid importing claims at runtime (no cycle, just tidy)
     from ms_graph_mcp.entra.claims import Principal
 
 # The verified caller identity for the current request.
-current_principal: ContextVar[Principal | None] = ContextVar(
-    "wg_principal", default=None
-)
+current_principal: ContextVar[Principal | None] = ContextVar("wg_principal", default=None)
 
 # The principal's access token (user JWT at the edge, OBO token downstream).
 current_access_token: ContextVar[str] = ContextVar("access_token", default="")

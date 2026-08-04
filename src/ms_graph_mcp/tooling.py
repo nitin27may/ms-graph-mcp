@@ -100,7 +100,9 @@ def tool(description: str | None = None):
         # 'await' expression" TypeError. Fail at decoration time instead, same
         # as the other structural checks below.
         if not inspect.iscoroutinefunction(fn):
-            raise TypeError(f"@tool function '{fn.__name__}' must be async (defined with 'async def')")
+            raise TypeError(
+                f"@tool function '{fn.__name__}' must be async (defined with 'async def')"
+            )
 
         fn_description = description or (inspect.getdoc(fn) or fn.__name__)
 

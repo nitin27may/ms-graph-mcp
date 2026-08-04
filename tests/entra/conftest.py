@@ -80,7 +80,5 @@ def patched_jwks(rsa_keypair, monkeypatch):
         def get_signing_key_from_jwt(self, token):
             return _Key(pub)
 
-    monkeypatch.setattr(
-        jwt_verify, "get_jwks_client", lambda url, lifespan=3600: _Client()
-    )
+    monkeypatch.setattr(jwt_verify, "get_jwks_client", lambda url, lifespan=3600: _Client())
     return pub

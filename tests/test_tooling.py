@@ -84,8 +84,7 @@ def test_openai_specs_shape():
 
 
 def test_openai_specs_rejects_non_tool():
-    async def plain(params, context):
-        ...
+    async def plain(params, context): ...
 
     with pytest.raises(ValueError):
         get_registry().openai_specs([plain])

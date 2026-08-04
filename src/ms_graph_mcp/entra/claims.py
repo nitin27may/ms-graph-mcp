@@ -35,12 +35,7 @@ class Principal:
 def extract_principal(claims: dict) -> Principal:
     """Build a :class:`Principal` from a decoded (already-verified) JWT payload."""
     email = (
-        (
-            claims.get("preferred_username")
-            or claims.get("upn")
-            or claims.get("email")
-            or ""
-        )
+        (claims.get("preferred_username") or claims.get("upn") or claims.get("email") or "")
         .strip()
         .lower()
     )

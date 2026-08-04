@@ -74,21 +74,15 @@ class AuthConfig(BaseSettings):
     # Comma-separated allowlist of authorized parties (azp/appid). Empty = no
     # azp enforcement; downstream MCP services set this to the app client_id so
     # only our fleet's OBO tokens (generic Graph/ADO audience) are accepted.
-    allowed_azp: str = Field(
-        default="", validation_alias=AliasChoices("WG_AUTH_ALLOWED_AZP")
-    )
+    allowed_azp: str = Field(default="", validation_alias=AliasChoices("WG_AUTH_ALLOWED_AZP"))
     # Comma-separated required App Roles. Empty = authenticate-only (no authz
     # gate). When set, the caller's `roles` claim must contain at least one.
-    required_roles: str = Field(
-        default="", validation_alias=AliasChoices("WG_AUTH_REQUIRED_ROLES")
-    )
+    required_roles: str = Field(default="", validation_alias=AliasChoices("WG_AUTH_REQUIRED_ROLES"))
     # Permit app-only (client-credentials) tokens — for future automation agents.
     allow_app_only: bool = Field(
         default=False, validation_alias=AliasChoices("WG_AUTH_ALLOW_APP_ONLY")
     )
-    clock_skew_seconds: int = Field(
-        default=60, validation_alias=AliasChoices("WG_AUTH_CLOCK_SKEW")
-    )
+    clock_skew_seconds: int = Field(default=60, validation_alias=AliasChoices("WG_AUTH_CLOCK_SKEW"))
     public_paths: str = Field(
         default="/health,/.well-known/agent-card.json",
         validation_alias=AliasChoices("WG_AUTH_PUBLIC_PATHS"),

@@ -234,8 +234,15 @@ async def test_fetch_message_attachments_base64_encodes_bytes(monkeypatch):
     from ms_graph_mcp.internal import FetchMessageAttachmentsInput, fetch_message_attachments
 
     fake = AsyncMock(
-        return_value=[{"id": "a1", "name": "f.pdf", "contentType": "application/pdf",
-                       "size": 3, "content_bytes": b"abc"}]
+        return_value=[
+            {
+                "id": "a1",
+                "name": "f.pdf",
+                "contentType": "application/pdf",
+                "size": 3,
+                "content_bytes": b"abc",
+            }
+        ]
     )
     monkeypatch.setattr("ms_graph_mcp.internal._fetch_message_attachments", fake)
     out = await fetch_message_attachments(
@@ -289,9 +296,7 @@ async def test_get_group_drive_calls_graph_and_returns_drive(monkeypatch):
         }
     )
     monkeypatch.setattr("ms_graph_mcp.files.graph_get", fake_get)
-    out = await get_group_drive(
-        GetGroupDriveInput(group_id="group-123"), {"access_token": "tok"}
-    )
+    out = await get_group_drive(GetGroupDriveInput(group_id="group-123"), {"access_token": "tok"})
     assert out["drive_id"] == "drive-abc"
     assert out["name"] == "Documents"
     assert out["web_url"].startswith("https://")
@@ -314,9 +319,7 @@ async def test_graph_get_group_drive_delegates_to_agent_tool(monkeypatch):
         }
     )
     monkeypatch.setattr("ms_graph_mcp.files.graph_get", fake_get)
-    out = await graph_get_group_drive(
-        InternalInput(group_id="g-999"), {"access_token": "svc-tok"}
-    )
+    out = await graph_get_group_drive(InternalInput(group_id="g-999"), {"access_token": "svc-tok"})
     assert out["drive_id"] == "drv-xyz"
     assert fake_get.await_args.args[1] == "/groups/g-999/drive"
 

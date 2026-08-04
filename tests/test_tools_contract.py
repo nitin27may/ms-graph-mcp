@@ -128,8 +128,14 @@ class TestPackageLayout:
         """
         import ms_graph_mcp
 
-        forbidden = ("shared", "agents", "integrations", "control_plane",
-                     "wg_tool_core", "wg_service_auth")
+        forbidden = (
+            "shared",
+            "agents",
+            "integrations",
+            "control_plane",
+            "wg_tool_core",
+            "wg_service_auth",
+        )
         pkg_dir = Path(ms_graph_mcp.__path__[0])
         offenders: list[str] = []
         for py in pkg_dir.rglob("*.py"):

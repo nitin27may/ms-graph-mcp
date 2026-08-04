@@ -78,7 +78,7 @@ Per-request headers:
 from ms_graph_mcp.app import build_app
 from ms_graph_mcp.config import GraphMcpConfig
 
-app = build_app(GraphMcpConfig(shared_secret="…"))   # a Starlette app — mount or serve it
+app = build_app(GraphMcpConfig(shared_secret="…"))  # a Starlette app — mount or serve it
 ```
 
 `build_app(cfg, *, setup_telemetry=None, instrument_starlette=None)` takes optional OpenTelemetry
@@ -86,6 +86,7 @@ hooks. The domain modules also work as plain async functions, without MCP:
 
 ```python
 from ms_graph_mcp import calendar
+
 events = await calendar.get_upcoming_meetings(params, {"access_token": tok})
 ```
 

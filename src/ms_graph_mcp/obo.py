@@ -70,9 +70,7 @@ async def acquire_token_on_behalf_of(
     if not scopes:
         raise OboError("no OBO scopes configured")
     if not (tenant_id and client_id and client_secret):
-        raise OboError(
-            "OBO not configured (tenant_id / client_id / client_secret required)"
-        )
+        raise OboError("OBO not configured (tenant_id / client_id / client_secret required)")
 
     loop = asyncio.get_event_loop()
 

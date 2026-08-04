@@ -28,9 +28,7 @@ def _event_payload(*, attendees: list[str], organizer: str | None = None) -> dic
     """Build the shape /me/events/{id} returns when $select=attendees,organizer."""
     return {
         "attendees": [{"emailAddress": {"address": a}} for a in attendees],
-        "organizer": (
-            {"emailAddress": {"address": organizer}} if organizer else {}
-        ),
+        "organizer": ({"emailAddress": {"address": organizer}} if organizer else {}),
     }
 
 

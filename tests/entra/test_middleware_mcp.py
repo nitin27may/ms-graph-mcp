@@ -39,9 +39,7 @@ def _app(cfg) -> Starlette:
             Route("/mcp", mcp, methods=["POST"]),
         ]
     )
-    app.add_middleware(
-        ServiceAuthMiddleware, config=cfg, mode=AuthMode.DOWNSTREAM_SERVICE
-    )
+    app.add_middleware(ServiceAuthMiddleware, config=cfg, mode=AuthMode.DOWNSTREAM_SERVICE)
     return app
 
 

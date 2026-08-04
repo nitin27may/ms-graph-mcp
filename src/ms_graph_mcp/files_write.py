@@ -178,7 +178,11 @@ async def ensure_folder_exists(
             raise OneDriveError(f"Folder /{walked} has no id after upsert")
         # Use the item id (not the drive-root path) for subsequent segments —
         # this works on both personal OneDrive and SharePoint drives.
-        parent_endpoint = f"/drives/{last_item.get('parentReference', {}).get('driveId') or drive_id or 'me'}/items/{parent_id}" if drive_id else f"/me/drive/items/{parent_id}"
+        parent_endpoint = (
+            f"/drives/{last_item.get('parentReference', {}).get('driveId') or drive_id or 'me'}/items/{parent_id}"
+            if drive_id
+            else f"/me/drive/items/{parent_id}"
+        )
 
     return _slim_drive_item(last_item)
 

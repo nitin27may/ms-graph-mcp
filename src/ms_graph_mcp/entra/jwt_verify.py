@@ -104,9 +104,7 @@ def verify_token(token: str, cfg: AuthConfig) -> Principal:
         raise MissingTokenError("empty bearer token")
 
     claims = (
-        _decode_verified(token, cfg)
-        if cfg.verify_signature
-        else _decode_unverified(token, cfg)
+        _decode_verified(token, cfg) if cfg.verify_signature else _decode_unverified(token, cfg)
     )
 
     if "nonce" in claims:

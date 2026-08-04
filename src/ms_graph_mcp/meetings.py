@@ -103,7 +103,9 @@ async def _resolve_attendee_transcript(
         ev_start_dt = _parse_dt(event_start)
         ev_end_dt = _parse_dt(event_end) if event_end else ev_start_dt + timedelta(hours=4)
         search_start = (ev_start_dt - timedelta(hours=1)).isoformat()
-        async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify, timeout=30
+        ) as client:
             resp = await client.get(
                 _build_url(
                     "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllTranscripts",
@@ -157,7 +159,9 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
     if params.meeting_id.startswith("https://"):
         join_url = params.meeting_id
         odata_safe_url = join_url.replace("'", "''")
-        async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=20) as client:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify, timeout=20
+        ) as client:
             resp = await client.get(
                 _build_url(
                     "https://graph.microsoft.com/v1.0/me/onlineMeetings",
@@ -470,7 +474,9 @@ async def get_meetings_with_transcripts(
     all_transcripts: list[dict] = []
     try:
         # Try without $filter first (some tenants reject it); just fetch recent transcripts.
-        async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify, timeout=30
+        ) as client:
             tr_all_resp = await client.get(
                 _build_url(
                     "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllTranscripts",
@@ -703,7 +709,9 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
         # On 403 (attendee), fall back to getAllTranscripts + time-based match.
         odata_safe_url = join_url.replace("'", "''")
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-        async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify, timeout=30
+        ) as client:
             resp = await client.get(
                 _build_url(
                     "https://graph.microsoft.com/v1.0/me/onlineMeetings",
