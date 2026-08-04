@@ -5,7 +5,8 @@ Guidance for Claude Code working in this repository.
 `ms-graph-mcp` is a Model Context Protocol server for Microsoft Graph — 55 tools across calendar,
 email, meetings, Teams, files, people, directory, tasks and OneNote, served over stdio or
 Streamable HTTP. The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
-deliberately **not** dependencies (see the note at the bottom of `pyproject.toml:40`).
+deliberately **not** dependencies (see the note at the bottom of the `dependencies` block in
+`pyproject.toml`, and [ADR 0002](docs/adr/0002-raw-httpx-graph-client.md)).
 
 README.md covers the user-facing surface — install, transports, env vars, headers. This file covers
 the invariants a change has to respect.
@@ -36,8 +37,10 @@ protocol revision.
 `asyncio_mode = "auto"`, so async tests need no `@pytest.mark.asyncio`. `--import-mode=importlib` is
 what lets `tests/test_config.py` and `tests/entra/test_config.py` coexist without `__init__.py`.
 
-There is no typecheck step (no mypy/pyright configured) and no CI. "Verified" here means pytest
-plus ruff, both green.
+There is no typecheck step (no mypy/pyright configured), so "verified" here means pytest plus ruff,
+both green. CI (`.github/workflows/ci.yml`) runs exactly that on Python 3.12 and 3.13, then builds
+the wheel, installs it into a clean venv, and resolves the tool allowlists from it — so a module
+missing from the wheel fails the PR rather than the release.
 
 ## Architecture
 
@@ -116,9 +119,9 @@ Security invariants — do not relax these to make something work:
   (`entra/middleware.py:44`). This was an audited finding — see the S2 comment at `auth.py:70-78`,
   with defense in depth at `entra/middleware.py:118`.
 - Dispatch fails closed. Unknown name, missing scope, and missing Graph token each return a
-  structured `{"error": ..., "message": ...}` before any Graph call (`server.py:74-135`).
+  structured `{"error": ..., "message": ...}` before any Graph call (`server.py:122-189`).
 - `send_email` / `propose_email` check `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` before the Graph call
-  (`email.py:237`), not after.
+  (`email.py:235`), not after.
 - Internal tools must never appear in `READ_TOOL_NAMES` / `WRITE_TOOL_NAMES` — that is what keeps
   them off the agent-visible `tools/list`.
 
@@ -129,7 +132,7 @@ Selected by `GRAPH_MCP_DOES_OBO` in `config.py:125-153`:
 - **Interim (default)** — the caller forwards an already-OBO'd Graph token. Validated for the Graph
   audience plus `azp == our client_id`, so only OBO tokens minted by this registration are accepted.
 - **Resource server** (`mcp_does_obo=true`) — the inbound token is audienced to this MCP. Audience
-  binding is the gate, so the azp check is dropped, and `server.py:143` exchanges the token via
+  binding is the gate, so the azp check is dropped, and `server.py:197` exchanges the token via
   `obo.py` (MSAL) before the tool runs.
 
 `src/ms_graph_mcp/entra/` is a vendored, self-contained auth toolkit running in

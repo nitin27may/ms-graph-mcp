@@ -23,7 +23,7 @@ green PR.
 ```bash
 uv run ruff check .          # lint (auto-fixes locally; CI uses --no-fix)
 uv run ruff format .         # format
-uv run pytest -q             # 548 tests and counting
+uv run pytest -q             # full suite
 ```
 
 Useful subsets:

@@ -23,7 +23,18 @@ tasks and OneNote, over **stdio** or **Streamable HTTP**.
 
 ## Install
 
+> **Not yet on PyPI.** The package name is unclaimed and the release pipeline is in place, but
+> nothing has been published. Until the first release, install from source. The `uvx --from
+> ms-graph-mcp` commands below are what will work after publication; substitute
+> `--from git+https://github.com/nitin27may/ms-graph-mcp` today.
+
 ```bash
+# From source (works now)
+git clone https://github.com/nitin27may/ms-graph-mcp
+cd ms-graph-mcp
+uv sync
+
+# After the first PyPI release
 uv add ms-graph-mcp
 # or
 pip install ms-graph-mcp
@@ -132,8 +143,9 @@ Three tiers, one auth seam.
 By domain: meetings 7 · directory 7 · email 6 · files 6 · tasks 6 · calendar 4 · Teams 4 ·
 people 3 · OneNote 3.
 
-The lists live in `ms_graph_mcp.allowlists` and are validated at startup — the server refuses to
-start half-wired rather than silently serving a partial surface.
+The lists live in `ms_graph_mcp.allowlists` and are resolved against the tool registry on every
+`tools/list`. A name in an allowlist with no registered tool raises rather than being skipped — the
+server refuses to serve a partial surface instead of silently dropping a tool.
 
 ## Documentation
 
@@ -149,7 +161,7 @@ start half-wired rather than silently serving a partial surface.
 
 ```bash
 uv sync
-uv run pytest -q            # 548 tests
+uv run pytest -q            # full suite
 uv run ruff check .
 uv run ruff format .
 ```
