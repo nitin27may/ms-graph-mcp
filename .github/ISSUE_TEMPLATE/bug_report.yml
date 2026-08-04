@@ -1,0 +1,76 @@
+name: Bug report
+description: Something behaves incorrectly
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do **not** report security vulnerabilities here — see
+        [SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md).
+
+        Never paste an access token, client secret, or shared secret into this form.
+        Redact the `Authorization` header from any log you attach.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`pip show ms-graph-mcp`, or the commit SHA if running from source"
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio (ms-graph-mcp)
+        - Streamable HTTP (ms-graph-mcp-http)
+        - Embedded via build_app()
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: MCP client
+      placeholder: "VS Code 1.9x / Claude Code / MCP Inspector / custom"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Include the tool name and arguments if a specific tool call is involved.
+      placeholder: |
+        1. Start the server with ...
+        2. Call `search_emails` with ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: >
+        The `[Graph]` log lines around the failure are usually the most useful. Redact tokens.
+      render: shell
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12.7"
+    validations:
+      required: true

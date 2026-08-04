@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Patch and minor bumps of the dev toolchain are noise individually.
+      dev-tooling:
+        patterns: ["ruff", "pytest*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # mcp, starlette and pydantic majors change the server's public
+      # behaviour — those upgrades are planned work, not a dependency bump.
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
+      - dependency-name: starlette
+        update-types: ["version-update:semver-major"]
+      - dependency-name: pydantic
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(ci)"

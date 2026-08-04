@@ -1,0 +1,13 @@
+# Default owner for everything.
+*                                   @nitin27may
+
+# Security-critical surfaces — the tier gates, token validation, and the
+# arbitrary-path internal passthrough. Changes here always need a review.
+/src/ms_graph_mcp/auth.py           @nitin27may
+/src/ms_graph_mcp/allowlists.py     @nitin27may
+/src/ms_graph_mcp/internal.py       @nitin27may
+/src/ms_graph_mcp/entra/            @nitin27may
+
+# Release pipeline: these workflows hold the OIDC permission that can
+# publish to PyPI.
+/.github/workflows/                 @nitin27may

@@ -1,0 +1,65 @@
+name: Graph coverage gap
+description: A Microsoft Graph capability this server does not expose yet
+labels: ["graph-coverage", "enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [docs/graph-coverage.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/graph-coverage.md)
+        first — the gap may already be catalogued.
+
+  - type: input
+    id: endpoint
+    attributes:
+      label: Graph endpoint
+      placeholder: "POST /me/events, GET /sites/{id}/lists, POST /search/query"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: api-version
+    attributes:
+      label: Graph API version
+      description: >
+        Beta endpoints are generally not accepted — Microsoft does not support them in production
+        and they can change without notice. A strong use case can still justify a discussion.
+      options:
+        - "v1.0"
+        - "beta"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which tier does this belong in?
+      options:
+        - "Read — no side effects"
+        - "Write — mutates tenant data"
+        - "Internal — for non-agent callers only"
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: What can an agent do with this that it cannot do today?
+    validations:
+      required: true
+
+  - type: input
+    id: permissions
+    attributes:
+      label: Delegated permissions required
+      placeholder: "Calendars.ReadWrite, Sites.Read.All"
+    validations:
+      required: true
+
+  - type: textarea
+    id: docs
+    attributes:
+      label: Microsoft Learn link
+      placeholder: "https://learn.microsoft.com/en-us/graph/api/..."
+    validations:
+      required: true

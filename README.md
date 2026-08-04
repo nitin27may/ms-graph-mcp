@@ -1,6 +1,11 @@
 # ms-graph-mcp
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 50+
+[![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
+
+A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 55
 tools across calendar, email, meetings (including transcripts), Teams, files, people, directory,
 tasks and OneNote, over **stdio** or **Streamable HTTP**.
 
@@ -130,25 +135,53 @@ people 3 · OneNote 3.
 The lists live in `ms_graph_mcp.allowlists` and are validated at startup — the server refuses to
 start half-wired rather than silently serving a partial surface.
 
+## Documentation
+
+| | |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, the add-a-tool checklist, and the invariants that are enforced by tests |
+| [SECURITY.md](SECURITY.md) | Reporting vulnerabilities, and the settings to change before exposing this beyond localhost |
+| [CHANGELOG.md](CHANGELOG.md) | Release history |
+| [CLAUDE.md](CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
+| [docs/adr/](docs/adr/) | Architecture Decision Records |
+
 ## Development
 
 ```bash
 uv sync
-uv run pytest -q
+uv run pytest -q            # 548 tests
 uv run ruff check .
+uv run ruff format .
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request — the tool allowlists and the
+tier separation have invariants that are enforced rather than advisory.
 
 ## Roadmap
 
-- [ ] Full documentation: app-registration setup, the delegated-permission matrix per tool,
-      delegated vs app-only, and end-to-end MCP client configuration
+Tracked in more detail in the issues. The near-term programme:
+
 - [ ] **MCP SDK 2.x** — currently pinned to `mcp>=1.9,<2.0`. The 2.x low-level `Server` replaced
-      the decorator registration API with `add_request_handler` and now ships its own
-      `streamable_http_app`, so `server.py` + `app.py` both need reworking.
+      decorator registration with constructor callbacks and requires handlers to return protocol
+      result types, so `server.py` and `app.py` both need reworking. 2.x also moves the SDK's HTTP
+      stack to `httpx2`, a distribution separate from the `httpx` this server's Graph client uses.
+- [ ] **OAuth resource server** — RFC 9728 Protected Resource Metadata, `WWW-Authenticate`
+      challenges, and RFC 8707 audience binding, so any spec-compliant MCP client can authenticate
+      without client-specific configuration.
+- [ ] **Toolset profiles** — expose a subset of the 55 tools per client, to cut the tool-definition
+      tokens an agent pays before it does any work.
+- [ ] **Graph coverage** — SharePoint sites and lists, unified `/search/query`, calendar write, and
+      1:1 chats are the notable gaps.
+- [ ] Full documentation: app-registration setup, the delegated-permission matrix per tool, and
+      end-to-end configuration for VS Code, Claude Code, Claude Desktop and MCP Inspector.
 - [ ] Sovereign cloud support (GCC High / 21Vianet) — a few Graph and login endpoints are still
-      hardcoded to the commercial cloud
-- [ ] Publish to PyPI
-- [ ] Container image + CI
+      hardcoded to the commercial cloud.
+- [ ] Publish to PyPI, and a container image on GHCR.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); participation is
+governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/nitin27may/ms-graph-mcp/security/advisories/new
+    about: Report privately. Never open a public issue for a security problem.
+  - name: Question or idea
+    url: https://github.com/nitin27may/ms-graph-mcp/discussions
+    about: Setup help, app-registration questions, and open-ended design discussion.
