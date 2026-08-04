@@ -155,6 +155,7 @@ server refuses to serve a partial surface instead of silently dropping a tool.
 | [SECURITY.md](SECURITY.md) | Reporting vulnerabilities, and the settings to change before exposing this beyond localhost |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 | [CLAUDE.md](CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
+| [docs/graph-coverage.md](docs/graph-coverage.md) | What this server covers of the Graph v1.0 surface, what it does not, and what is out of scope |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## Development
