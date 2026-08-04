@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from ms_graph_mcp import obo, server
+from ms_graph_mcp import obo
 from ms_graph_mcp.config import GraphMcpConfig, set_config
 from ms_graph_mcp.context import current_request_context
 
@@ -78,7 +78,7 @@ def _obo_config() -> GraphMcpConfig:
     )
 
 
-async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatch):
+async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatch, call_tool):
     set_config(_obo_config())
     captured: dict = {}
 
@@ -98,7 +98,7 @@ async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatc
 
     cv = current_request_context.set({"access_token": "user-tok", "user_email": "u@x.com"})
     try:
-        await server.dispatch_graph_tool("get_my_profile", {})
+        await call_tool("get_my_profile", {})
     finally:
         current_request_context.reset(cv)
 
@@ -108,7 +108,7 @@ async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatc
     assert captured["obo_scopes"] == ["https://graph.microsoft.com/.default"]
 
 
-async def test_dispatch_obo_failure_returns_structured_error(monkeypatch):
+async def test_dispatch_obo_failure_returns_structured_error(monkeypatch, call_tool):
     set_config(_obo_config())
 
     async def _boom(*a, **k):
@@ -118,20 +118,20 @@ async def test_dispatch_obo_failure_returns_structured_error(monkeypatch):
 
     cv = current_request_context.set({"access_token": "user-tok", "user_email": "u@x.com"})
     try:
-        result = await server.dispatch_graph_tool("get_my_profile", {})
+        result = await call_tool("get_my_profile", {})
     finally:
         current_request_context.reset(cv)
 
-    payload = json.loads(result[0].text)
+    payload = json.loads(result.content[0].text)
     assert payload["error"] == "obo_failed"
 
 
-async def test_dispatch_obo_mode_still_fails_closed_without_token(monkeypatch):
+async def test_dispatch_obo_mode_still_fails_closed_without_token(monkeypatch, call_tool):
     set_config(_obo_config())
     cv = current_request_context.set({"access_token": "", "user_email": ""})
     try:
-        result = await server.dispatch_graph_tool("get_my_profile", {})
+        result = await call_tool("get_my_profile", {})
     finally:
         current_request_context.reset(cv)
-    payload = json.loads(result[0].text)
+    payload = json.loads(result.content[0].text)
     assert payload["error"] == "missing_graph_token"

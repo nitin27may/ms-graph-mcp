@@ -161,10 +161,9 @@ tier separation have invariants that are enforced rather than advisory.
 
 Tracked in more detail in the issues. The near-term programme:
 
-- [ ] **MCP SDK 2.x** — currently pinned to `mcp>=1.9,<2.0`. The 2.x low-level `Server` replaced
-      decorator registration with constructor callbacks and requires handlers to return protocol
-      result types, so `server.py` and `app.py` both need reworking. 2.x also moves the SDK's HTTP
-      stack to `httpx2`, a distribution separate from the `httpx` this server's Graph client uses.
+- [x] **MCP SDK 2.x** — done. Speaks the 2026-07-28 protocol revision while still serving 2025-era
+      clients. Note that 2.x moves the SDK's HTTP stack to `httpx2`, a distribution separate from the
+      `httpx` this server's Graph client uses; consolidating the two is tracked separately.
 - [ ] **OAuth resource server** — RFC 9728 Protected Resource Metadata, `WWW-Authenticate`
       challenges, and RFC 8707 audience binding, so any spec-compliant MCP client can authenticate
       without client-specific configuration.

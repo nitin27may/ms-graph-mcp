@@ -17,8 +17,26 @@ change between minor versions; breaking changes are called out explicitly.
   that installs the built wheel into a clean environment and resolves the tool allowlists from it.
 - `CLAUDE.md` documenting the architecture, the add-a-tool checklist, and the security invariants.
 
+- `tests/test_protocol_conformance.py` — drives a real `mcp.Client` session against the server
+  in-process, covering protocol negotiation, tool advertisement, scope gating, and error shapes.
+- `serverInfo` now reports the installed package version, a title, and the project URL. It
+  previously sent an empty version string.
+- Cache hints on `tools/list` (`ttlMs` 5 minutes, `cacheScope: public`), which improve client-side
+  prompt-cache hit rates on a tool list that only changes with the caller's scopes.
+
 ### Changed
 
+- **Migrated to MCP Python SDK 2.0** and the 2026-07-28 protocol revision. Handlers are now
+  constructor callbacks (`on_list_tools` / `on_call_tool`) returning `ListToolsResult` /
+  `CallToolResult`, and the low-level `Server` builds the Starlette app itself. 2025-era clients are
+  still served from the same server.
+- Tool failures now set `isError: true` on the result instead of returning a plain JSON blob, so
+  clients feed them back to the model for self-correction. Structured `invalid_arguments` responses
+  from the tool registry are marked the same way.
+- Dependency floors raised to match MCP 2.0: `pydantic>=2.12`, `starlette>=1.0`,
+  `pyjwt[crypto]>=2.10.1`. `httpx2` arrives transitively; the Graph client stays on `httpx`.
+- The Streamable HTTP request body limit is set to 16 MiB, up from the SDK's 4 MiB default, so the
+  internal tier's base64 upload tool is not capped at roughly 3 MiB of actual file.
 - Applied `ruff format` across the codebase. No behaviour change.
 
 ## [0.1.0]

@@ -25,7 +25,13 @@ uv run pytest -q                           # full suite
 uv run pytest tests/test_meetings.py -q    # one file
 uv run pytest -k "write_scope" -q          # one test
 uv run ruff check .                        # NB: [tool.ruff] fix = true — this rewrites files
+uv run ruff format .                       # CI runs --check; keep the tree formatted
 ```
+
+`tests/test_protocol_conformance.py` drives a real `mcp.Client` session against the server
+in-process. That is the only place the wire protocol is actually exercised — the other tests call
+handlers directly, which cannot catch a schema rejection or a silent downgrade to the legacy
+protocol revision.
 
 `asyncio_mode = "auto"`, so async tests need no `@pytest.mark.asyncio`. `--import-mode=importlib` is
 what lets `tests/test_config.py` and `tests/entra/test_config.py` coexist without `__init__.py`.
@@ -142,16 +148,28 @@ Extend those fixtures rather than mocking `verify_token`.
   `ConsistencyLevel: eventual`).
 - **`graph_get_url()`'s host check is an SSRF guard**, not a formality. It is the only helper taking
   a caller-supplied full URL; without the check a bearer-token request could be redirected off-host.
-- **`mcp` is pinned `>=1.9,<2.0` deliberately.** 2.x dropped the decorator registration API
-  (`server.list_tools()` / `server.call_tool()`) that `server.py` uses and ships its own
-  `streamable_http_app`. Upgrading means reworking `server.py` and `app.py` together.
+- **MCP SDK 2.x: protocol models expose *field names*, not aliases.** `Tool.input_schema`,
+  `CallToolResult.is_error`, `ListToolsResult.ttl_ms` — `tool.inputSchema` raises `AttributeError`.
+  The camelCase forms work only as *construction* keywords (`types.Tool(inputSchema=...)`) and on
+  the wire. Easy to get wrong in tests, where it fails as an unrelated-looking `AttributeError`.
+- **`Server.get_request_handler()` takes a method string**, not a request type —
+  `get_request_handler("tools/list")`, not `get_request_handler(types.ListToolsRequest)`.
+- **`streamable_http_app()` owns the app's lifespan** — it runs the session manager there. If you
+  need your own lifespan, chain onto `application.router.lifespan_context`; replacing it means the
+  transport never starts. See `app.py`.
+- **`mcp` 2.0 runs on `httpx2`, a distribution separate from `httpx`.** Both are installed: the SDK
+  uses `httpx2`, `client.py` uses `httpx`. Consolidating them is tracked separately — do not mix the
+  two in one module.
 - **The package must not import the original monorepo.** `tests/test_tools_contract.py:123` AST-walks
   every module and fails on imports of `shared`, `agents`, `integrations`, `control_plane`,
   `wg_tool_core`, `wg_service_auth`.
 - **`get_config()` is a cached module singleton** and `build_app()` mutates it. `tests/conftest.py`
   resets it autouse; keep new config-touching tests within that fixture's reach.
-- **`build_app()` is a factory, not a singleton** — `StreamableHTTPSessionManager.run()` may only be
-  entered once per manager (`app.py:40-49`).
+- **`build_app()` is a factory, not a singleton** — the session manager's `run()` may only be entered
+  once per manager.
+- **Restore `current_request_context` by value in fixtures, not by token.** A fixture body and an
+  async test run in different contexts, and `ContextVar.reset()` rejects a token minted in another
+  one. See the fixture in `tests/test_protocol_conformance.py`.
 - `tooling.local_registry()` exists for hosting two tool packages in one process. Otherwise `@tool`
   registers into a process global.
 - OpenTelemetry is API-only. Spans are no-ops unless the host process configures an SDK, so a

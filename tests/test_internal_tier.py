@@ -26,7 +26,6 @@ from ms_graph_mcp.internal import (
     graph_upload_file_to_drive,
     graph_walk_drive_descendants,
 )
-from ms_graph_mcp.server import dispatch_graph_tool, list_graph_tools
 
 # ── allowlist hygiene ─────────────────────────────────────────────────────────
 
@@ -40,10 +39,10 @@ def test_internal_tools_never_in_agent_allowlists():
 # ── tools/list gating ───────────────────────────────────────────────────────
 
 
-async def test_internal_tools_hidden_from_agent_list():
+async def test_internal_tools_hidden_from_agent_list(list_tools):
     cv = current_request_context.set({"access_token": "t", "write_scope": True})
     try:
-        names = {t.name for t in await list_graph_tools()}
+        names = {t.name for t in await list_tools()}
     finally:
         current_request_context.reset(cv)
     # Read + write present (write_scope on), internal absent.
@@ -51,10 +50,10 @@ async def test_internal_tools_hidden_from_agent_list():
     assert READ_TOOL_NAME_SET <= names
 
 
-async def test_internal_tools_listed_only_with_internal_scope():
+async def test_internal_tools_listed_only_with_internal_scope(list_tools):
     cv = current_request_context.set({"access_token": "t", "internal_scope": True})
     try:
-        names = {t.name for t in await list_graph_tools()}
+        names = {t.name for t in await list_tools()}
     finally:
         current_request_context.reset(cv)
     assert "graph_request" in names
@@ -63,16 +62,16 @@ async def test_internal_tools_listed_only_with_internal_scope():
 # ── dispatch gating ──────────────────────────────────────────────────────────
 
 
-async def test_dispatch_rejects_internal_tool_without_scope():
+async def test_dispatch_rejects_internal_tool_without_scope(call_tool):
     cv = current_request_context.set({"access_token": "t"})  # no internal_scope
     try:
-        result = await dispatch_graph_tool("graph_request", {"method": "GET", "path": "/me"})
+        result = await call_tool("graph_request", {"method": "GET", "path": "/me"})
     finally:
         current_request_context.reset(cv)
-    assert json.loads(result[0].text)["error"] == "internal_scope_required"
+    assert json.loads(result.content[0].text)["error"] == "internal_scope_required"
 
 
-async def test_dispatch_allows_internal_tool_with_scope(monkeypatch):
+async def test_dispatch_allows_internal_tool_with_scope(monkeypatch, call_tool):
     captured: dict = {}
 
     class _Reg:
@@ -85,11 +84,11 @@ async def test_dispatch_allows_internal_tool_with_scope(monkeypatch):
         {"access_token": "user-tok", "internal_scope": True, "user_email": "u@x"}
     )
     try:
-        result = await dispatch_graph_tool("graph_request", {"method": "GET", "path": "/me"})
+        result = await call_tool("graph_request", {"method": "GET", "path": "/me"})
     finally:
         current_request_context.reset(cv)
     assert captured["name"] == "graph_request"
-    assert json.loads(result[0].text) == {"ok": True}
+    assert json.loads(result.content[0].text) == {"ok": True}
 
 
 # ── graph_request passthrough behaviour ───────────────────────────────────────
@@ -155,19 +154,19 @@ def test_walk_drive_descendants_in_internal_allowlist_only():
     assert "graph_walk_drive_descendants" not in WRITE_TOOL_NAME_SET
 
 
-async def test_walk_drive_descendants_listed_only_with_internal_scope():
+async def test_walk_drive_descendants_listed_only_with_internal_scope(list_tools):
     cv = current_request_context.set({"access_token": "t", "internal_scope": True})
     try:
-        names = {t.name for t in await list_graph_tools()}
+        names = {t.name for t in await list_tools()}
     finally:
         current_request_context.reset(cv)
     assert "graph_walk_drive_descendants" in names
 
 
-async def test_walk_drive_descendants_hidden_from_agent_list():
+async def test_walk_drive_descendants_hidden_from_agent_list(list_tools):
     cv = current_request_context.set({"access_token": "t", "write_scope": True})
     try:
-        names = {t.name for t in await list_graph_tools()}
+        names = {t.name for t in await list_tools()}
     finally:
         current_request_context.reset(cv)
     assert "graph_walk_drive_descendants" not in names
@@ -324,7 +323,7 @@ async def test_graph_get_group_drive_delegates_to_agent_tool(monkeypatch):
     assert fake_get.await_args.args[1] == "/groups/g-999/drive"
 
 
-async def test_app_only_dispatch_mints_cc_token_without_user_token(monkeypatch):
+async def test_app_only_dispatch_mints_cc_token_without_user_token(monkeypatch, call_tool):
     """probe_graph_access is app-only: dispatch mints a client-credentials token
     and runs even with no access_token (user token) present."""
     captured: dict = {}
@@ -341,9 +340,9 @@ async def test_app_only_dispatch_mints_cc_token_without_user_token(monkeypatch):
     )
     cv = current_request_context.set({"internal_scope": True})  # no access_token
     try:
-        result = await dispatch_graph_tool("probe_graph_access", {"path": "/me"})
+        result = await call_tool("probe_graph_access", {"path": "/me"})
     finally:
         current_request_context.reset(cv)
     assert captured["name"] == "probe_graph_access"
     assert captured["access_token"] == "cc-tok"
-    assert json.loads(result[0].text) == {"status": 200}
+    assert json.loads(result.content[0].text) == {"status": 200}

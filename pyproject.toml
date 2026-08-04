@@ -18,20 +18,24 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "pydantic>=2.10.0,<3.0",
+    # Floors are set by mcp 2.0's own requirements, not by what this package uses.
+    "pydantic>=2.12.0,<3.0",
     "pydantic-settings>=2.7.0",
+    # The Graph client's HTTP stack. NOTE: mcp 2.0 runs on `httpx2`, a *separate*
+    # distribution, so both are present in the environment. Consolidating client.py
+    # onto httpx2 is tracked separately — an HTTP-stack swap and an SDK migration
+    # are two failure domains and do not belong in one change.
     "httpx>=0.28.0,<1.0",
     # Entra JWT validation (JWKS, RS256) for the HTTP transport's auth middleware.
-    "pyjwt[crypto]>=2.9.0,<3.0",
+    "pyjwt[crypto]>=2.10.1,<3.0",
     # OTEL tracing spans in the Graph client. API only — these are no-ops unless the
     # host process configures an SDK, so a standalone run needs no exporter.
     "opentelemetry-api>=1.28.0",
-    # MCP server + transports. Pinned below 2.0: the 2.x low-level Server dropped the
-    # decorator registration API (`server.list_tools()` / `server.call_tool()`) in favour
-    # of `add_request_handler`, and grew its own `streamable_http_app`. Migrating is a
-    # tracked follow-up — see the roadmap in README.md.
-    "mcp>=1.9.0,<2.0",
-    "starlette>=0.41.0,<1.0",
+    # MCP server + transports, speaking the 2026-07-28 protocol revision.
+    "mcp>=2.0.0,<3.0",
+    # mcp 2.0 requires starlette 1.x. BaseHTTPMiddleware, which the auth layer
+    # subclasses, is unchanged across that major.
+    "starlette>=1.0,<2.0",
     "uvicorn[standard]>=0.34.0",
     "anyio>=4.0",
     # Confidential-client on-behalf-of / client-credentials exchange. Only used when
