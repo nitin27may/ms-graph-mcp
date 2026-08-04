@@ -1,0 +1,153 @@
+name: Release
+
+# Tag-triggered only. Nothing here runs on a push or a pull request.
+#
+#   git tag v0.2.0-rc1 && git push --tags   → TestPyPI rehearsal
+#   git tag v0.2.0     && git push --tags   → PyPI, after environment approval
+#
+# Before the first real publish, the following must exist (see CONTRIBUTING.md):
+#   - a PyPI "pending publisher" for project ms-graph-mcp, owner nitin27may,
+#     repository ms-graph-mcp, workflow release.yml, environment pypi
+#   - GitHub Environments named `pypi` and `testpypi`
+# There is no API token to configure. Trusted Publishing exchanges a
+# short-lived GitHub OIDC token for an upload credential.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build distributions
+    runs-on: ubuntu-latest
+    # Deliberately no id-token permission on this job. The build runs
+    # third-party code (build backends, dependencies); if it could mint an
+    # OIDC token it could mint a PyPI upload credential. Only the publish
+    # jobs below get that permission.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # The tag is the source of truth for the version. A tag that does not
+      # match pyproject.toml means someone forgot the version bump, and
+      # catching it here is cheaper than yanking a release.
+      - name: Verify the tag matches pyproject version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          TAG="${TAG%%-rc*}"
+          PROJECT=$(uv run --no-project python -c \
+            "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "tag=$TAG pyproject=$PROJECT"
+          if [ "$TAG" != "$PROJECT" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pyproject version $PROJECT"
+            exit 1
+          fi
+
+      - run: uv build
+
+      - name: Install the wheel into a clean venv and exercise it
+        run: |
+          python -m venv /tmp/smoke
+          /tmp/smoke/bin/pip install --quiet dist/*.whl
+          /tmp/smoke/bin/python - <<'PY'
+          from ms_graph_mcp.allowlists import (
+              resolve_read_tools, resolve_write_tools, resolve_internal_tools,
+          )
+          read, write, internal = (
+              resolve_read_tools(), resolve_write_tools(), resolve_internal_tools(),
+          )
+          print(f"read={len(read)} write={len(write)} internal={len(internal)}")
+          assert read and write and internal
+          PY
+          test -x /tmp/smoke/bin/ms-graph-mcp
+          test -x /tmp/smoke/bin/ms-graph-mcp-http
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  testpypi:
+    name: publish to TestPyPI
+    # Release candidates rehearse the pipeline before anything reaches PyPI.
+    if: contains(github.ref_name, '-rc')
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/ms-graph-mcp
+    permissions:
+      id-token: write # mandatory for Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  pypi:
+    name: publish to PyPI
+    # Real releases only — an -rc tag stops at TestPyPI.
+    if: "!contains(github.ref_name, '-rc')"
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ms-graph-mcp
+    permissions:
+      id-token: write # mandatory for Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Publishes with PEP 740 build provenance attestations, which the
+      # action generates from the same OIDC identity by default.
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: create GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRERELEASE=""
+          if [[ "$GITHUB_REF_NAME" == *-rc* ]]; then PRERELEASE="--prerelease"; fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            $PRERELEASE
+
+  # The container image job lands alongside the Dockerfile. Adding it here
+  # before that file exists would fail the first tagged release.
