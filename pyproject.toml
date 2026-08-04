@@ -1,0 +1,83 @@
+[project]
+name = "ms-graph-mcp"
+version = "0.1.0"
+description = "Microsoft Graph MCP server — 50+ tools across calendar, email, meetings, Teams, files, people, directory, tasks and OneNote, over stdio or Streamable HTTP."
+requires-python = ">=3.12"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Nitin Singh", email = "nitin27may@gmail.com" }]
+keywords = ["mcp", "model-context-protocol", "microsoft-graph", "microsoft-365", "entra", "azure"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.10.0,<3.0",
+    "pydantic-settings>=2.7.0",
+    "httpx>=0.28.0,<1.0",
+    # Entra JWT validation (JWKS, RS256) for the HTTP transport's auth middleware.
+    "pyjwt[crypto]>=2.9.0,<3.0",
+    # OTEL tracing spans in the Graph client. API only — these are no-ops unless the
+    # host process configures an SDK, so a standalone run needs no exporter.
+    "opentelemetry-api>=1.28.0",
+    # MCP server + transports. Pinned below 2.0: the 2.x low-level Server dropped the
+    # decorator registration API (`server.list_tools()` / `server.call_tool()`) in favour
+    # of `add_request_handler`, and grew its own `streamable_http_app`. Migrating is a
+    # tracked follow-up — see the roadmap in README.md.
+    "mcp>=1.9.0,<2.0",
+    "starlette>=0.41.0,<1.0",
+    "uvicorn[standard]>=0.34.0",
+    "anyio>=4.0",
+    # Confidential-client on-behalf-of / client-credentials exchange. Only used when
+    # the server performs its own OBO (GRAPH_MCP_DOES_OBO=true); small and pure-Python.
+    "msal>=1.28.0",
+    # NB: the Graph client is raw httpx by design — msgraph-sdk and azure-identity are
+    # intentionally NOT dependencies.
+]
+
+[project.urls]
+Homepage = "https://github.com/nitin27may/ms-graph-mcp"
+Repository = "https://github.com/nitin27may/ms-graph-mcp"
+Issues = "https://github.com/nitin27may/ms-graph-mcp/issues"
+
+[project.scripts]
+ms-graph-mcp = "ms_graph_mcp.stdio:main"        # stdio transport (Claude Desktop, Claude Code, …)
+ms-graph-mcp-http = "ms_graph_mcp.app:run"      # Streamable-HTTP transport
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ms_graph_mcp"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+fix = true
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+# E501: long lines are intentional in places (URLs, prompts, log messages). `ruff format`
+# already handles anything genuinely reformattable.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# importlib mode keeps same-named test modules in different directories distinct
+# (tests/test_config.py vs tests/entra/test_config.py) without needing __init__.py.
+addopts = "--import-mode=importlib"

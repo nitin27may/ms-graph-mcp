@@ -1,0 +1,163 @@
+"""Contract tests for the Graph client helpers added so callers stop hand-rolling
+their own httpx (probe status, full-URL/nextLink GET, raw OneNote page create)."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+
+from ms_graph_mcp.client import graph_get_url, graph_probe_status
+from ms_graph_mcp.onenote import create_onenote_page
+
+_GET = "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=abc"
+
+
+def _mock_client(*, get=None, post=None):
+    client = AsyncMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=False)
+    if get is not None:
+        client.get = AsyncMock(return_value=get)
+    if post is not None:
+        client.post = AsyncMock(return_value=post)
+    return client
+
+
+def _resp(*, status: int = 200, payload: dict | None = None, headers: dict | None = None):
+    r = MagicMock()
+    r.status_code = status
+    r.headers = headers or {}
+    r.raise_for_status = MagicMock()
+    r.json.return_value = payload if payload is not None else {}
+    return r
+
+
+# ── graph_probe_status ─────────────────────────────────────────────────────────
+
+
+async def test_graph_probe_status_returns_status_code():
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=_resp(status=404))) as cls:
+            status = await graph_probe_status("tok", "/users/u@x/messages/m1?$select=id")
+    assert status == 404
+    # Probe GET does NOT raise on non-200 (status is classified by the caller).
+    assert "/users/u@x/messages/m1" in cls.return_value.get.call_args.args[0]
+
+
+async def test_graph_probe_status_none_on_transport_error():
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        client = _mock_client()
+        client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
+        with patch("httpx.AsyncClient", return_value=client):
+            assert await graph_probe_status("tok", "/users/u@x/events/e1") is None
+
+
+# ── graph_get_url ──────────────────────────────────────────────────────────────
+
+
+async def test_graph_get_url_returns_json():
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        resp = _resp(payload={"value": [1, 2], "@odata.nextLink": None})
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)) as cls:
+            out = await graph_get_url("tok", _GET)
+    assert out == {"value": [1, 2], "@odata.nextLink": None}
+    assert cls.return_value.get.call_args.args[0] == _GET
+
+
+async def test_graph_get_url_retries_once_on_429(monkeypatch):
+    # First call → 429 with Retry-After; second → 200. asyncio.sleep is stubbed.
+    slept: list = []
+
+    async def _no_sleep(secs):
+        slept.append(secs)
+
+    monkeypatch.setattr("ms_graph_mcp.client.asyncio.sleep", _no_sleep)
+
+    throttled = _resp(status=429, headers={"Retry-After": "2"})
+    ok = _resp(payload={"value": ["page2"]})
+    client = _mock_client()
+    client.get = AsyncMock(side_effect=[throttled, ok])
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=client):
+            out = await graph_get_url("tok", _GET)
+    assert out == {"value": ["page2"]}
+    assert client.get.await_count == 2
+    assert slept == [2.0]  # honoured Retry-After
+
+
+# ── graph_get_url host allowlist (Phase 0 item 7, agentic audit) ────────────────
+#
+# graph_get_url takes a full caller-supplied URL (unlike every other helper in
+# this file, which is pinned to _GRAPH_BASE by construction) and attaches the
+# caller's Graph bearer token to it. Without a host check, a value that ends
+# up here from a compromised/misused caller could redirect a delegated
+# token to an arbitrary host — SSRF + token exfiltration.
+
+
+async def test_graph_get_url_rejects_non_graph_host():
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient") as cls:
+            try:
+                await graph_get_url("tok", "https://evil.example.com/steal?token=x")
+                raised = False
+            except ValueError:
+                raised = True
+    assert raised
+    # The bearer must never even reach an HTTP client for a rejected host.
+    cls.assert_not_called()
+
+
+async def test_graph_get_url_rejects_graph_lookalike_host():
+    """A URL that merely CONTAINS the Graph host as a substring (path,
+    query, or subdomain trick) must not pass a naive substring check."""
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient") as cls:
+            for bad_url in (
+                "https://evil.example.com/?u=https://graph.microsoft.com/v1.0",
+                "https://graph.microsoft.com.evil.example.com/v1.0/me",
+                "http://graph.microsoft.com/v1.0/me",  # http, not https
+            ):
+                try:
+                    await graph_get_url("tok", bad_url)
+                    raised = False
+                except ValueError:
+                    raised = True
+                assert raised, f"expected rejection for {bad_url!r}"
+    cls.assert_not_called()
+
+
+async def test_graph_get_url_accepts_real_graph_url():
+    """The happy path — a genuine nextLink under _GRAPH_BASE — must still work
+    (regression guard against the allowlist being too strict)."""
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        resp = _resp(payload={"value": []})
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+            out = await graph_get_url("tok", _GET)
+    assert out == {"value": []}
+
+
+# ── create_onenote_page ─────────────────────────────────────────────────────────
+
+
+async def test_create_onenote_page_posts_html_and_returns_raw():
+    raw = {"id": "p1", "title": "T", "links": {"oneNoteWebUrl": {"href": "https://x"}}}
+    with patch("ms_graph_mcp.config.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(post=_resp(payload=raw))) as cls:
+            out = await create_onenote_page(
+                "tok", section_id="sec-9", page_title="Title", content_html="<p>body</p>"
+            )
+    assert out == raw  # raw Graph page object returned unchanged
+    call = cls.return_value.post.call_args
+    assert "/me/onenote/sections/sec-9/pages" in call.args[0]
+    assert call.kwargs["headers"]["Content-Type"] == "text/html"
+    body = call.kwargs["content"].decode("utf-8")
+    assert "<title>Title</title>" in body and "<p>body</p>" in body
