@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import re
+from enum import StrEnum
+
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ms_graph_mcp.tooling import (
     ToolRegistry,
     ToolSpec,
+    _pydantic_to_json_schema,
     get_registry,
     local_registry,
     tool,
@@ -157,3 +162,54 @@ def test_nested_local_registries():
 
 def test_registry_get_returns_none_for_missing():
     assert ToolRegistry().get("nope") is None
+
+
+# ── JSON Schema emission ──────────────────────────────────────────────────────
+# `$defs` used to be stripped unconditionally, which left `$ref` pointers to
+# definitions that were no longer in the document. Every input model was flat at
+# the time, so nothing broke — these tests exist so it stays that way once nested
+# models arrive.
+
+
+class _Priority(StrEnum):
+    low = "low"
+    high = "high"
+
+
+class _Nested(BaseModel):
+    email: str
+    kind: str = "required"
+
+
+class _WithRefs(BaseModel):
+    subject: str
+    people: list[_Nested] = Field(default_factory=list)
+    priority: _Priority = _Priority.low
+
+
+def _refs(schema: dict) -> set[str]:
+    blob = json.dumps(schema)
+    return set(re.findall(r'"\$ref":\s*"#/\$defs/([^"]+)"', blob))
+
+
+def test_nested_model_schema_keeps_its_defs_resolvable():
+    schema = _pydantic_to_json_schema(_WithRefs)
+    dangling = _refs(schema) - set(schema.get("$defs", {}))
+    assert not dangling, f"schema references definitions that were stripped: {sorted(dangling)}"
+
+
+def test_enum_field_ref_resolves():
+    schema = _pydantic_to_json_schema(_WithRefs)
+    assert "_Priority" in schema.get("$defs", {})
+
+
+def test_flat_model_schema_carries_no_defs():
+    """The lean path is preserved — a model with no refs still drops $defs."""
+    schema = _pydantic_to_json_schema(_Echo)
+    assert "$defs" not in schema
+    assert not _refs(schema)
+
+
+def test_title_is_always_stripped():
+    for model in (_Echo, _WithRefs):
+        assert "title" not in _pydantic_to_json_schema(model)

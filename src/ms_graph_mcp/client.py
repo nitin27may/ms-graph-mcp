@@ -201,6 +201,47 @@ async def graph_post(access_token: str, path: str, body: dict) -> dict:
             return resp.json()
 
 
+async def graph_post_no_content(
+    access_token: str,
+    path: str,
+    body: dict | None = None,
+    extra_headers: dict[str, str] | None = None,
+) -> None:
+    """POST to Microsoft Graph for an action endpoint that returns no body.
+
+    Graph's *action* endpoints — ``sendMail``, ``reply``, ``replyAll``,
+    ``forward``, ``accept``, ``decline``, ``cancel`` — answer ``202 Accepted``
+    with an empty body. :func:`graph_post` ends in ``resp.json()`` and therefore
+    blows up on exactly those calls, which is why several tools historically
+    hand-rolled ``httpx`` and lost the tracing span, the ``[Graph]`` error log,
+    and the TLS toggle in the process.
+
+    Returns ``None`` on success and raises ``httpx.HTTPStatusError`` otherwise.
+    Tolerates a body if one is sent — some endpoints return ``201`` with content
+    that the caller does not need.
+    """
+    url = f"{_GRAPH_BASE}{path}"
+    headers = _headers(access_token)
+    if extra_headers:
+        headers.update(extra_headers)
+    with _tracer.start_as_current_span(
+        "graph.request",
+        attributes={"http.method": "POST", "http.url": url},
+    ) as span:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
+        ) as client:
+            logger.info("[Graph] POST %s", path)
+            resp = await client.post(url, headers=headers, json=body if body is not None else {})
+            span.set_attribute("http.status_code", resp.status_code)
+            if not resp.is_success:
+                span.set_status(trace.StatusCode.ERROR, f"HTTP {resp.status_code}")
+                _log_error(resp)
+            else:
+                logger.info("[Graph] POST %s → %s", path, resp.status_code)
+            resp.raise_for_status()
+
+
 async def graph_patch(
     access_token: str,
     path: str,

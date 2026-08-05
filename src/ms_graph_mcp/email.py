@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get
+from ms_graph_mcp.client import graph_get, graph_post_no_content
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.odata import escape_odata_string, validate_mail_folder
 from ms_graph_mcp.tooling import tool
@@ -292,19 +292,10 @@ async def send_email(params: SendEmailInput, context: dict) -> dict:
             {"emailAddress": {"address": addr}} for addr in params.cc_recipients
         ]
 
-    # sendMail returns 202 Accepted with no body — use httpx directly
-    import httpx
-
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.post(
-            "https://graph.microsoft.com/v1.0/me/sendMail",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
-            json=mail_body,
-        )
-        resp.raise_for_status()
+    # sendMail answers 202 Accepted with an empty body, so graph_post's
+    # resp.json() cannot be used — graph_post_no_content exists for exactly this
+    # shape and keeps the tracing span and [Graph] error logging.
+    await graph_post_no_content(token, "/me/sendMail", mail_body)
 
     return {
         "status": "sent",

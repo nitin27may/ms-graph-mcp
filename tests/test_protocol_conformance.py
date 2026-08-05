@@ -14,6 +14,7 @@ while still catching what the direct-call tests cannot.
 from __future__ import annotations
 
 import json
+import re
 
 import mcp
 import pytest
@@ -95,6 +96,29 @@ async def test_every_advertised_tool_has_a_protocol_valid_schema(graph_client_co
         assert tool.description, f"{tool.name} has no description"
         assert tool.input_schema.get("type") == "object", tool.name
         assert "properties" in tool.input_schema, tool.name
+
+
+async def test_no_advertised_tool_has_an_unresolvable_ref(graph_client_context):
+    """Every ``$ref`` an advertised schema emits must resolve inside that schema.
+
+    MCP requires clients to follow ``$ref`` resolution when validating tool
+    inputs, so a pointer to a stripped definition is a protocol break the client
+    hits at call time. This guards the whole surface at once, which matters as
+    nested input models spread — a per-model unit test only covers the models
+    someone remembered to write a test for.
+    """
+    graph_client_context(write_scope=True, internal_scope=True)
+    async with mcp.Client(build_graph_mcp_server()) as client:
+        result = await client.list_tools()
+
+    offenders: list[str] = []
+    for tool in result.tools:
+        schema = tool.input_schema
+        refs = set(re.findall(r'"\$ref":\s*"#/\$defs/([^"]+)"', json.dumps(schema)))
+        dangling = refs - set(schema.get("$defs", {}))
+        if dangling:
+            offenders.append(f"{tool.name} -> {sorted(dangling)}")
+    assert not offenders, "tools advertise unresolvable $ref: " + "; ".join(offenders)
 
 
 async def test_unknown_tool_returns_a_tool_execution_error(graph_client_context):

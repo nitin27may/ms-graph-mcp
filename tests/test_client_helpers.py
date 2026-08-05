@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from ms_graph_mcp.client import graph_get_url, graph_probe_status
+from ms_graph_mcp.client import graph_get_url, graph_post_no_content, graph_probe_status
 from ms_graph_mcp.onenote import create_onenote_page
 
 _GET = "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=abc"
@@ -161,3 +161,76 @@ async def test_create_onenote_page_posts_html_and_returns_raw():
     assert call.kwargs["headers"]["Content-Type"] == "text/html"
     body = call.kwargs["content"].decode("utf-8")
     assert "<title>Title</title>" in body and "<p>body</p>" in body
+
+
+# ── graph_post_no_content ──────────────────────────────────────────────────────
+# Graph's action endpoints (sendMail, reply, forward, accept, cancel, …) answer
+# 202 with an empty body, which graph_post cannot handle because it ends in
+# resp.json(). This helper is what stops callers reaching for raw httpx and
+# losing the tracing span and [Graph] error logging along the way.
+
+
+async def test_graph_post_no_content_succeeds_on_empty_202():
+    resp = _resp(status=202)
+    resp.is_success = True
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        client = _mock_client(post=resp)
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await graph_post_no_content("tok", "/me/sendMail", {"message": {}})
+
+    assert result is None
+    # The body must never be read — that is the whole point of the helper.
+    resp.json.assert_not_called()
+    called_url = client.post.call_args.args[0]
+    assert called_url == "https://graph.microsoft.com/v1.0/me/sendMail"
+
+
+async def test_graph_post_no_content_sends_auth_and_extra_headers():
+    resp = _resp(status=202)
+    resp.is_success = True
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        client = _mock_client(post=resp)
+        with patch("httpx.AsyncClient", return_value=client):
+            await graph_post_no_content(
+                "tok", "/me/events/e1/cancel", {"comment": "x"}, {"If-Match": 'W/"1"'}
+            )
+
+    headers = client.post.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer tok"
+    assert headers["If-Match"] == 'W/"1"'
+
+
+async def test_graph_post_no_content_raises_on_error_status():
+    resp = _resp(status=403)
+    resp.is_success = False
+    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "forbidden", request=MagicMock(), response=MagicMock()
+    )
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(post=resp)):
+            with patch("ms_graph_mcp.client._log_error") as log_error:
+                try:
+                    await graph_post_no_content("tok", "/me/sendMail", {})
+                except httpx.HTTPStatusError:
+                    pass
+                else:  # pragma: no cover
+                    raise AssertionError("expected HTTPStatusError")
+
+    # A failed action must still be logged with the Graph error body.
+    log_error.assert_called_once()
+
+
+async def test_graph_post_no_content_defaults_body_to_empty_object():
+    """Several action endpoints take no body at all; Graph wants {} not null."""
+    resp = _resp(status=202)
+    resp.is_success = True
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        client = _mock_client(post=resp)
+        with patch("httpx.AsyncClient", return_value=client):
+            await graph_post_no_content("tok", "/me/events/e1/accept")
+
+    assert client.post.call_args.kwargs["json"] == {}

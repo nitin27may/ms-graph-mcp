@@ -72,7 +72,7 @@ class TestSendEmailTool:
     def test_returns_structured_error_when_recipient_outside_allowlist(self):
         with (
             _allowlist("contoso.com"),
-            patch("httpx.AsyncClient") as mock_client,
+            patch("ms_graph_mcp.email.graph_post_no_content") as mock_post,
         ):
             params = SendEmailInput(
                 to_recipients=["attacker@evil.com"],
@@ -83,40 +83,27 @@ class TestSendEmailTool:
 
         assert result["error"] == "recipient_not_allowed"
         assert "attacker@evil.com" in result["message"]
-        # Critical: httpx must not have been constructed — the rejection
-        # short-circuits before any Graph call.
-        mock_client.assert_not_called()
+        # Critical: the Graph call must not have been reached — the rejection
+        # short-circuits before it.
+        mock_post.assert_not_called()
 
     def test_allows_send_when_recipient_in_allowlist(self):
-        """When every recipient is on the allowlist, the tool proceeds to
-        the Graph call (we mock httpx to assert it was actually invoked)."""
+        """When every recipient is on the allowlist the tool proceeds to Graph.
 
-        class _FakeResp:
-            status_code = 202
+        Mocked at the client seam rather than at httpx: send_email goes through
+        ``graph_post_no_content`` because /me/sendMail answers 202 with an empty
+        body, and patching httpx here would only re-test the client module.
+        """
+        captured: dict = {}
 
-            def raise_for_status(self):
-                return None
-
-        captured_call: dict = {}
-
-        class _FakeClient:
-            def __init__(self, **_):
-                pass
-
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, *_):
-                return None
-
-            async def post(self, url, **kwargs):
-                captured_call["url"] = url
-                captured_call["json"] = kwargs.get("json")
-                return _FakeResp()
+        async def _fake_post(token, path, body=None, extra_headers=None):
+            captured["token"] = token
+            captured["path"] = path
+            captured["body"] = body
 
         with (
             _allowlist("contoso.com"),
-            patch("httpx.AsyncClient", _FakeClient),
+            patch("ms_graph_mcp.email.graph_post_no_content", _fake_post),
         ):
             params = SendEmailInput(
                 to_recipients=["bob@contoso.com"],
@@ -126,5 +113,6 @@ class TestSendEmailTool:
             result = asyncio.run(send_email(params, {"access_token": "tok"}))
 
         assert result["status"] == "sent"
-        assert captured_call["url"].endswith("/me/sendMail")
-        assert captured_call["json"]["message"]["subject"] == "Status update"
+        assert captured["path"] == "/me/sendMail"
+        assert captured["token"] == "tok"
+        assert captured["body"]["message"]["subject"] == "Status update"

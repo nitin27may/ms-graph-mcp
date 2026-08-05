@@ -60,12 +60,35 @@ class ToolSpec:
     fn: Callable
 
 
+def _schema_has_ref(node: Any) -> bool:
+    """True if ``node`` contains a ``$ref`` anywhere in its tree."""
+    if isinstance(node, dict):
+        if "$ref" in node:
+            return True
+        return any(_schema_has_ref(v) for v in node.values())
+    if isinstance(node, list):
+        return any(_schema_has_ref(v) for v in node)
+    return False
+
+
 def _pydantic_to_json_schema(model: type[BaseModel]) -> dict[str, Any]:
-    """Extract a JSON Schema compatible with OpenAI function calling from a Pydantic model."""
+    """Extract a JSON Schema compatible with OpenAI function calling from a Pydantic model.
+
+    ``title`` is dropped unconditionally — it is noise that costs tokens and tells
+    the model nothing its own field name doesn't.
+
+    ``$defs`` is dropped **only when nothing references it**. Pydantic emits
+    ``$defs`` plus ``{"$ref": "#/$defs/Foo"}`` for any nested model or Enum; the
+    strip used to be unconditional, which left a pointer to a definition that was
+    no longer there. Every input model was flat when that was written, so nothing
+    broke — but the first nested model would have shipped a schema no client could
+    resolve. MCP requires clients to follow ``$ref`` resolution when validating
+    tool inputs, so a dangling ref is a protocol break, not cosmetic noise.
+    """
     schema = model.model_json_schema()
-    # Remove $defs / title noise that confuses some LLMs
     schema.pop("title", None)
-    schema.pop("$defs", None)
+    if not _schema_has_ref(schema):
+        schema.pop("$defs", None)
     return schema
 
 
