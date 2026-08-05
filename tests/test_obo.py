@@ -104,7 +104,7 @@ async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatc
 
     cv = current_request_context.set({"access_token": "user-tok", "user_email": "u@x.com"})
     try:
-        await call_tool("get_my_profile", {})
+        await call_tool("people_get_my_profile", {})
     finally:
         current_request_context.reset(cv)
 
@@ -124,7 +124,7 @@ async def test_dispatch_obo_failure_returns_structured_error(monkeypatch, call_t
 
     cv = current_request_context.set({"access_token": "user-tok", "user_email": "u@x.com"})
     try:
-        result = await call_tool("get_my_profile", {})
+        result = await call_tool("people_get_my_profile", {})
     finally:
         current_request_context.reset(cv)
 
@@ -136,7 +136,7 @@ async def test_dispatch_obo_mode_still_fails_closed_without_token(monkeypatch, c
     set_config(_obo_config())
     cv = current_request_context.set({"access_token": "", "user_email": ""})
     try:
-        result = await call_tool("get_my_profile", {})
+        result = await call_tool("people_get_my_profile", {})
     finally:
         current_request_context.reset(cv)
     payload = json.loads(result.content[0].text)

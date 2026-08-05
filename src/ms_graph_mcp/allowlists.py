@@ -27,7 +27,7 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "send_email",
     "propose_email",
     "save_to_onenote",
-    "create_todo_task",
+    "tasks_create_todo",
     # files
     "upload_file",
     "update_file_content",
@@ -40,10 +40,10 @@ WRITE_TOOL_NAME_SET: frozenset[str] = frozenset(WRITE_TOOL_NAMES)
 # Explicit read-only allowlist, grouped by Graph domain.
 READ_TOOL_NAMES: tuple[str, ...] = (
     # calendar
-    "get_upcoming_meetings",
-    "get_meeting_details",
-    "get_meeting_attendees",
-    "get_calendar_events_range",
+    "calendar_list_upcoming_events",
+    "calendar_get_event",
+    "calendar_get_event_attendees",
+    "calendar_list_events_in_range",
     # email
     "list_email_attachments",
     "search_emails",
@@ -65,17 +65,17 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "get_file_content",
     "get_shared_files",
     # people
-    "search_people",
-    "get_person_details",
-    "get_my_profile",
+    "people_search",
+    "people_get",
+    "people_get_my_profile",
     # directory
-    "search_users",
-    "get_user_details",
-    "get_user_manager",
-    "get_user_groups",
-    "search_groups",
-    "get_group_members",
-    "get_group_details",
+    "directory_search_users",
+    "directory_get_user",
+    "directory_get_user_manager",
+    "directory_list_user_groups",
+    "directory_search_groups",
+    "directory_list_group_members",
+    "directory_get_group",
     # teams
     "search_teams_messages",
     "get_channel_messages",
@@ -86,11 +86,11 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "get_notebooks",
     "get_sections",
     # tasks
-    "get_planner_plans",
-    "get_planner_buckets",
-    "get_todo_lists",
-    "get_todo_tasks",
-    "get_planner_tasks",
+    "tasks_list_planner_plans",
+    "tasks_list_planner_buckets",
+    "tasks_list_todo_lists",
+    "tasks_list_todo",
+    "tasks_list_planner_tasks",
 )
 
 READ_TOOL_NAME_SET: frozenset[str] = frozenset(READ_TOOL_NAMES)

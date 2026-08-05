@@ -7,7 +7,7 @@ import urllib.parse
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, tool
 
 _SELECT_PERSON = "id,displayName,givenName,surname,emailAddresses,jobTitle,department,officeLocation,scoredEmailAddresses"
 _SELECT_USER = "id,displayName,givenName,surname,mail,jobTitle,department,officeLocation,mobilePhone,businessPhones"
@@ -27,9 +27,17 @@ class GetMyProfileInput(BaseModel):
 
 
 @tool(
-    description="Search for people in the organisation by name or keyword. Returns display name, email, title, and department."
+    description=(
+        "Find colleagues the signed-in user actually works with, ranked by relevance from their own "
+        "mail and meeting history — so it finds the right 'Priya' without exact spelling. "
+        "Returns name, email, title and department. Use directory_search_users to search the "
+        "whole tenant instead, or people_list_contacts for the saved address book. "
+        "Requires People.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_people",),
 )
-async def search_people(params: SearchPeopleInput, context: dict) -> list[dict]:
+async def people_search(params: SearchPeopleInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -44,9 +52,17 @@ async def search_people(params: SearchPeopleInput, context: dict) -> list[dict]:
 
 
 @tool(
-    description="Get details about a specific person by their email address — title, department, phone."
+    description=(
+        "Look up one person in the organisation by their exact email address and return their "
+        "profile: display name, job title, department, office location and phone numbers. Use when "
+        "the address is already known — people_search is the tool for finding someone by partial "
+        "or approximate name. Fails if the address does not belong to a tenant account. "
+        "Requires User.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_person_details",),
 )
-async def get_person_details(params: GetPersonDetailsInput, context: dict) -> dict:
+async def people_get(params: GetPersonDetailsInput, context: dict) -> dict:
     token = context["access_token"]
     # Use the users endpoint for direct lookup
     data = await graph_get(
@@ -68,8 +84,17 @@ async def get_person_details(params: GetPersonDetailsInput, context: dict) -> di
     }
 
 
-@tool(description="Get the currently authenticated user's own profile information.")
-async def get_my_profile(params: GetMyProfileInput, context: dict) -> dict:
+@tool(
+    description=(
+        "Get the signed-in user's own profile — their name, email address, job title, department "
+        "and office. Call this first when a request says 'me', 'my' or 'I' and the user's own "
+        "identity or email address is needed to answer it, for example before filtering a calendar "
+        "or addressing a message. Takes no arguments. Requires User.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_my_profile",),
+)
+async def people_get_my_profile(params: GetMyProfileInput, context: dict) -> dict:
     token = context["access_token"]
     data = await graph_get(
         token,

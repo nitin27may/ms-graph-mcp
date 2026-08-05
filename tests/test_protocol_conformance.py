@@ -150,7 +150,7 @@ async def test_write_tools_appear_over_the_protocol_with_scope(graph_client_cont
 async def test_missing_token_fails_closed_over_the_protocol(graph_client_context):
     graph_client_context(access_token="")
     async with mcp.Client(build_graph_mcp_server()) as client:
-        result = await client.call_tool("get_my_profile", {})
+        result = await client.call_tool("people_get_my_profile", {})
     assert result.is_error is True
     assert json.loads(result.content[0].text)["error"] == "missing_graph_token"
 
@@ -215,7 +215,7 @@ async def test_a_superseded_tool_name_still_dispatches(graph_client_context, mon
 
     class _AliasingRegistry:
         def canonical_name(self, name):
-            return "get_my_profile" if name == "legacy_profile_name" else name
+            return "people_get_my_profile" if name == "legacy_profile_name" else name
 
         async def call(self, name, arguments_json, context):
             return {"ok": True, "resolved_to": name}
@@ -228,7 +228,7 @@ async def test_a_superseded_tool_name_still_dispatches(graph_client_context, mon
 
     payload = json.loads(result.content[0].text)
     assert result.is_error is False
-    assert payload["resolved_to"] == "get_my_profile"
+    assert payload["resolved_to"] == "people_get_my_profile"
 
 
 async def test_an_unknown_name_still_fails_with_the_name_the_caller_used(
@@ -241,3 +241,41 @@ async def test_an_unknown_name_still_fails_with_the_name_the_caller_used(
 
     assert result.is_error is True
     assert "definitely_not_a_tool" in json.loads(result.content[0].text)["message"]
+
+
+async def test_a_real_renamed_tool_still_answers_to_its_old_name(graph_client_context, monkeypatch):
+    """The alias path against the actual registry, not a stand-in.
+
+    ``test_a_superseded_tool_name_still_dispatches`` proves the wiring with a
+    fake registry. This proves the promise we actually made to callers: a tool
+    renamed during the backfill still works under the name they integrated
+    against.
+    """
+    captured: dict = {}
+
+    async def _fake_call(self, name, arguments_json, context):
+        captured["name"] = name
+        return {"ok": True}
+
+    from ms_graph_mcp.tooling import ToolRegistry
+
+    monkeypatch.setattr(ToolRegistry, "call", _fake_call)
+
+    graph_client_context()
+    async with mcp.Client(build_graph_mcp_server()) as client:
+        result = await client.call_tool("get_my_profile", {})  # the pre-rename name
+
+    assert result.is_error is False
+    assert captured["name"] == "people_get_my_profile"
+
+
+async def test_renamed_tools_advertise_only_their_new_name(graph_client_context):
+    """An alias must never appear in tools/list — it would look like a duplicate."""
+    graph_client_context(write_scope=True, internal_scope=True)
+    async with mcp.Client(build_graph_mcp_server()) as client:
+        result = await client.list_tools()
+
+    advertised = {t.name for t in result.tools}
+    superseded = {"get_my_profile", "search_people", "get_upcoming_meetings", "get_meeting_details"}
+    leaked = advertised & superseded
+    assert not leaked, f"deprecated names are being advertised: {sorted(leaked)}"

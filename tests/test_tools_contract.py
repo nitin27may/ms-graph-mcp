@@ -160,7 +160,7 @@ class TestToolQualityContract:
     failures are invisible until an agent misbehaves in production:
 
       * A description too short to distinguish the tool from its neighbours.
-        `search_people`, `search_users` and `search_contacts` read three
+        `search_people`, `directory_search_users` and `search_contacts` read three
         different data sources; at 40 characters each, nothing tells them apart.
       * Missing annotations. MCP's documented default for a tool that declares
         none is "non-read-only, potentially destructive, non-idempotent,

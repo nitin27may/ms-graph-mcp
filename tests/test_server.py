@@ -53,7 +53,7 @@ async def test_dispatch_rejects_write_tool_without_scope(call_tool):
 async def test_dispatch_fails_closed_without_graph_token(call_tool):
     cv = current_request_context.set({"access_token": "", "user_email": ""})
     try:
-        result = await call_tool("get_my_profile", {})
+        result = await call_tool("people_get_my_profile", {})
     finally:
         current_request_context.reset(cv)
     assert result.is_error is True
@@ -81,14 +81,14 @@ async def test_dispatch_routes_to_registry_with_request_context(monkeypatch, cal
     ctx = {"access_token": "graph-token-abc", "user_email": "u@example.com"}
     cv = current_request_context.set(ctx)
     try:
-        result = await call_tool("get_my_profile", {"foo": "bar"})
+        result = await call_tool("people_get_my_profile", {"foo": "bar"})
     finally:
         current_request_context.reset(cv)
 
-    assert captured["name"] == "get_my_profile"
+    assert captured["name"] == "people_get_my_profile"
     assert json.loads(captured["arguments_json"]) == {"foo": "bar"}
     assert captured["context"] == ctx
-    assert json.loads(result.content[0].text) == {"ok": True, "tool": "get_my_profile"}
+    assert json.loads(result.content[0].text) == {"ok": True, "tool": "people_get_my_profile"}
     assert result.is_error is False
 
 
@@ -113,7 +113,7 @@ async def test_dispatch_marks_registry_argument_errors_as_tool_errors(monkeypatc
 
     cv = current_request_context.set({"access_token": "tok"})
     try:
-        result = await call_tool("get_my_profile", {})
+        result = await call_tool("people_get_my_profile", {})
     finally:
         current_request_context.reset(cv)
 

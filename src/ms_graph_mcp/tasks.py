@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_post
 from ms_graph_mcp.odata import validate_task_status
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, WRITE_CREATE, tool
 
 
 class GetPlannerPlansInput(BaseModel):
@@ -46,8 +46,18 @@ class GetPlannerTasksInput(BaseModel):
     max_results: int = Field(25, description="Maximum tasks to return")
 
 
-@tool(description="Get the user's Planner plans. Returns a list of plans with id and title.")
-async def get_planner_plans(params: GetPlannerPlansInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the Microsoft Planner plans the signed-in user can see, with id and title. Planner "
+        "is the shared, board-style task tool attached to Microsoft 365 groups and Teams — use it "
+        "for team work. Microsoft To Do is the user's private task list; tasks_list_todo_lists "
+        "covers that. Plan ids from here feed tasks_list_planner_tasks. Premium plans are not "
+        "available through Graph. Requires Tasks.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_planner_plans",),
+)
+async def tasks_list_planner_plans(params: GetPlannerPlansInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -57,8 +67,17 @@ async def get_planner_plans(params: GetPlannerPlansInput, context: dict) -> list
     return [{"id": p.get("id", ""), "title": p.get("title", "")} for p in (data.get("value") or [])]
 
 
-@tool(description="Get buckets in a Planner plan. Returns a list of buckets with id and name.")
-async def get_planner_buckets(params: GetPlannerBucketsInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the buckets (columns) in a Planner plan, with id and name. Buckets are how a plan's "
+        "board is divided — typically stages such as To Do, In Progress and Done. Takes a plan id "
+        "from tasks_list_planner_plans. Use when a task needs placing in the right column, or to "
+        "report on how work is distributed across a board. Requires Tasks.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_planner_buckets",),
+)
+async def tasks_list_planner_buckets(params: GetPlannerBucketsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -69,9 +88,16 @@ async def get_planner_buckets(params: GetPlannerBucketsInput, context: dict) -> 
 
 
 @tool(
-    description="Get the user's Microsoft To Do lists. Returns a list of lists with id and displayName."
+    description=(
+        "List the signed-in user's Microsoft To Do lists, with id and display name. To Do is the "
+        "user's own private task manager, separate from Planner's shared team boards. Call this "
+        "first when a task needs adding to a specific named list — the returned list id is what "
+        "tasks_create_todo and tasks_list_todo take. Requires Tasks.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_todo_lists",),
 )
-async def get_todo_lists(params: GetTodoListsInput, context: dict) -> list[dict]:
+async def tasks_list_todo_lists(params: GetTodoListsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -84,8 +110,17 @@ async def get_todo_lists(params: GetTodoListsInput, context: dict) -> list[dict]
     ]
 
 
-@tool(description="Create a task in Microsoft To Do. Returns the created task ID.")
-async def create_todo_task(params: CreateTodoTaskInput, context: dict) -> dict:
+@tool(
+    description=(
+        "Add a task to the signed-in user's Microsoft To Do, optionally with a due date and notes. "
+        "Returns the created task's id and title. Goes to the default Tasks list unless a list id "
+        "from tasks_list_todo_lists is given. This creates a private task for the user only — "
+        "Planner is the tool for work a team shares. Requires Tasks.ReadWrite."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("create_todo_task",),
+)
+async def tasks_create_todo(params: CreateTodoTaskInput, context: dict) -> dict:
     token = context["access_token"]
 
     # Find or use default task list
@@ -110,8 +145,17 @@ async def create_todo_task(params: CreateTodoTaskInput, context: dict) -> dict:
     return {"id": task.get("id", ""), "title": task.get("title", ""), "list_id": list_id}
 
 
-@tool(description="Get Microsoft To Do tasks. Optionally filter by list and status.")
-async def get_todo_tasks(params: GetTodoTasksInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the signed-in user's Microsoft To Do tasks, optionally narrowed to one list and to a "
+        "status of notStarted, inProgress, completed or all. Returns id, title, status, due date "
+        "and notes. Defaults to unfinished tasks across every list, which is what 'what do I need "
+        "to do' usually means. Requires Tasks.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_todo_tasks",),
+)
+async def tasks_list_todo(params: GetTodoTasksInput, context: dict) -> list[dict]:
     token = context["access_token"]
 
     if params.list_id:
@@ -149,8 +193,17 @@ async def get_todo_tasks(params: GetTodoTasksInput, context: dict) -> list[dict]
     return all_tasks[: params.max_results]
 
 
-@tool(description="Get tasks from a Microsoft Planner plan.")
-async def get_planner_tasks(params: GetPlannerTasksInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the tasks on a Planner plan's board, given a plan id from tasks_list_planner_plans. "
+        "Returns id, title, bucket, percent complete, due date and who each task is assigned to. "
+        "Use for shared team work; tasks_list_todo covers the user's own private list. Task ids "
+        "returned here are what the Planner update tools take. Requires Tasks.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_planner_tasks",),
+)
+async def tasks_list_planner_tasks(params: GetPlannerTasksInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,

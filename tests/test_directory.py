@@ -6,7 +6,7 @@ Verifies:
     delegated OBO token, group lookups take the app-only Entra token.
   - No credentials are hardcoded in the tool source.
   - All 7 directory tools are importable and registered.
-  - search_users / get_user_groups behave correctly against a mocked Graph.
+  - directory_search_users / directory_list_user_groups behave correctly against a mocked Graph.
 """
 
 from __future__ import annotations
@@ -25,13 +25,13 @@ class TestDirectoryToolTokenUsage:
 
     def test_user_tools_use_access_token(self):
         source = self._read_source()
-        # search_users, get_user_details, get_user_manager, get_user_groups
+        # directory_search_users, directory_get_user, directory_get_user_manager, directory_list_user_groups
         # should use context["access_token"] (OBO)
         assert 'context["access_token"]' in source
 
     def test_group_tools_use_entra_app_token(self):
         source = self._read_source()
-        # search_groups, get_group_members, get_group_details
+        # directory_search_groups, directory_list_group_members, directory_get_group
         # should use context["entra_app_token"] with fallback
         assert 'context.get("entra_app_token")' in source
 
@@ -53,46 +53,46 @@ class TestDirectoryToolFunctions:
     """Test tool function signatures and imports."""
 
     def test_search_users_importable(self):
-        from ms_graph_mcp.directory import search_users
+        from ms_graph_mcp.directory import directory_search_users
 
-        assert callable(search_users)
+        assert callable(directory_search_users)
 
     def test_get_user_details_importable(self):
-        from ms_graph_mcp.directory import get_user_details
+        from ms_graph_mcp.directory import directory_get_user
 
-        assert callable(get_user_details)
+        assert callable(directory_get_user)
 
     def test_get_user_manager_importable(self):
-        from ms_graph_mcp.directory import get_user_manager
+        from ms_graph_mcp.directory import directory_get_user_manager
 
-        assert callable(get_user_manager)
+        assert callable(directory_get_user_manager)
 
     def test_get_user_groups_importable(self):
-        from ms_graph_mcp.directory import get_user_groups
+        from ms_graph_mcp.directory import directory_list_user_groups
 
-        assert callable(get_user_groups)
+        assert callable(directory_list_user_groups)
 
     def test_search_groups_importable(self):
-        from ms_graph_mcp.directory import search_groups
+        from ms_graph_mcp.directory import directory_search_groups
 
-        assert callable(search_groups)
+        assert callable(directory_search_groups)
 
     def test_get_group_members_importable(self):
-        from ms_graph_mcp.directory import get_group_members
+        from ms_graph_mcp.directory import directory_list_group_members
 
-        assert callable(get_group_members)
+        assert callable(directory_list_group_members)
 
     def test_get_group_details_importable(self):
-        from ms_graph_mcp.directory import get_group_details
+        from ms_graph_mcp.directory import directory_get_group
 
-        assert callable(get_group_details)
+        assert callable(directory_get_group)
 
 
 class TestSearchUsersWithMock:
-    """Test search_users with mocked Graph API."""
+    """Test directory_search_users with mocked Graph API."""
 
     async def test_exact_email_match(self):
-        from ms_graph_mcp.directory import SearchUsersInput, search_users
+        from ms_graph_mcp.directory import SearchUsersInput, directory_search_users
 
         mock_user = {
             "id": "u1",
@@ -107,7 +107,7 @@ class TestSearchUsersWithMock:
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = mock_user
-            result = await search_users(
+            result = await directory_search_users(
                 SearchUsersInput(query="alice@company.com"),
                 {"access_token": "test-token"},
             )
@@ -117,7 +117,7 @@ class TestSearchUsersWithMock:
         assert result[0]["mail"] == "alice@company.com"
 
     async def test_name_search_returns_list(self):
-        from ms_graph_mcp.directory import SearchUsersInput, search_users
+        from ms_graph_mcp.directory import SearchUsersInput, directory_search_users
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             # Name query (no @) goes straight to $search — single call
@@ -145,7 +145,7 @@ class TestSearchUsersWithMock:
                     },
                 ]
             }
-            result = await search_users(
+            result = await directory_search_users(
                 SearchUsersInput(query="Alice"),
                 {"access_token": "test-token"},
             )
@@ -156,7 +156,7 @@ class TestSearchUsersWithMock:
 
 
 class TestGetUserGroups:
-    """Regression: ``get_user_groups`` MUST cast the path to
+    """Regression: ``directory_list_user_groups`` MUST cast the path to
     ``microsoft.graph.group`` and prefer the entra_app token.
 
     Symptom of the bug we're guarding against: groups all rendered as
@@ -167,7 +167,7 @@ class TestGetUserGroups:
     """
 
     async def test_uses_cast_path_microsoft_graph_group(self):
-        from ms_graph_mcp.directory import UserIdentifierInput, get_user_groups
+        from ms_graph_mcp.directory import UserIdentifierInput, directory_list_user_groups
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {
@@ -182,7 +182,7 @@ class TestGetUserGroups:
                     },
                 ]
             }
-            await get_user_groups(
+            await directory_list_user_groups(
                 UserIdentifierInput(user="alice@co.com"),
                 {"access_token": "obo-token", "entra_app_token": "app-token"},
             )
@@ -195,11 +195,11 @@ class TestGetUserGroups:
         )
 
     async def test_prefers_entra_app_token_over_obo(self):
-        from ms_graph_mcp.directory import UserIdentifierInput, get_user_groups
+        from ms_graph_mcp.directory import UserIdentifierInput, directory_list_user_groups
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"value": []}
-            await get_user_groups(
+            await directory_list_user_groups(
                 UserIdentifierInput(user="alice@co.com"),
                 {"access_token": "obo-token", "entra_app_token": "app-token"},
             )
@@ -212,11 +212,11 @@ class TestGetUserGroups:
         )
 
     async def test_falls_back_to_obo_when_app_token_missing(self):
-        from ms_graph_mcp.directory import UserIdentifierInput, get_user_groups
+        from ms_graph_mcp.directory import UserIdentifierInput, directory_list_user_groups
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"value": []}
-            await get_user_groups(
+            await directory_list_user_groups(
                 UserIdentifierInput(user="alice@co.com"),
                 {"access_token": "obo-token"},  # no entra_app_token
             )
@@ -225,7 +225,7 @@ class TestGetUserGroups:
         assert used_token == "obo-token"
 
     async def test_returns_normalized_group_dicts(self):
-        from ms_graph_mcp.directory import UserIdentifierInput, get_user_groups
+        from ms_graph_mcp.directory import UserIdentifierInput, directory_list_user_groups
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {
@@ -249,7 +249,7 @@ class TestGetUserGroups:
                     },
                 ]
             }
-            result = await get_user_groups(
+            result = await directory_list_user_groups(
                 UserIdentifierInput(user="alice@co.com"),
                 {"access_token": "t", "entra_app_token": "app"},
             )
@@ -263,11 +263,11 @@ class TestGetUserGroups:
     async def test_uses_consistency_level_eventual(self):
         """``$count=true`` requires ConsistencyLevel: eventual, same as
         graph_routes.get_user_member_of."""
-        from ms_graph_mcp.directory import UserIdentifierInput, get_user_groups
+        from ms_graph_mcp.directory import UserIdentifierInput, directory_list_user_groups
 
         with patch("ms_graph_mcp.directory.graph_get", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = {"value": []}
-            await get_user_groups(
+            await directory_list_user_groups(
                 UserIdentifierInput(user="alice@co.com"),
                 {"access_token": "t", "entra_app_token": "app"},
             )

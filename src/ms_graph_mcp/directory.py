@@ -7,7 +7,7 @@ import logging
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, tool
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +67,17 @@ class GroupIdInput(BaseModel):
 
 
 @tool(
-    description="Search Entra users by display name, email, or UPN. Returns profiles with job title, department, and office."
+    description=(
+        "Search every user account in the Entra ID tenant directory by display name, email or UPN. "
+        "Returns id, name, email, job title, department and office. Use this to find anyone in the "
+        "organisation; people_search only covers colleagues the signed-in user already interacts "
+        "with, and ranks by relevance rather than matching the whole directory. Guest accounts "
+        "cannot run this query. Requires User.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_users",),
 )
-async def search_users(params: SearchUsersInput, context: dict) -> list[dict]:
+async def directory_search_users(params: SearchUsersInput, context: dict) -> list[dict]:
     token = context["access_token"]
     q = params.query.strip()
     max_r = min(max(params.max_results, 1), 50)
@@ -102,9 +110,16 @@ async def search_users(params: SearchUsersInput, context: dict) -> list[dict]:
 
 
 @tool(
-    description="Get full user profile including manager information. Specify user by email or UPN."
+    description=(
+        "Get one tenant user's full directory profile by email or UPN, including their manager. "
+        "Returns job title, department, office, phone numbers and account details. Use when the "
+        "address is known and the org-chart context matters; people_get returns a similar profile "
+        "without the manager lookup. Requires User.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_user_details",),
 )
-async def get_user_details(params: UserIdentifierInput, context: dict) -> dict:
+async def directory_get_user(params: UserIdentifierInput, context: dict) -> dict:
     token = context["access_token"]
     user_id = params.user.strip()
 
@@ -132,8 +147,17 @@ async def get_user_details(params: UserIdentifierInput, context: dict) -> dict:
     return result
 
 
-@tool(description="Get a user's manager. Returns the manager's profile.")
-async def get_user_manager(params: UserIdentifierInput, context: dict) -> dict:
+@tool(
+    description=(
+        "Get the person a given user reports to, identified by email or UPN. Returns the manager's "
+        "name, email, job title and department. Use for escalation paths and 'who does X report "
+        "to' questions. Returns an empty result when the user has no manager set in the directory, "
+        "which is common for executives and service accounts. Requires User.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_user_manager",),
+)
+async def directory_get_user_manager(params: UserIdentifierInput, context: dict) -> dict:
     token = context["access_token"]
     user_id = params.user.strip()
 
@@ -153,9 +177,16 @@ async def get_user_manager(params: UserIdentifierInput, context: dict) -> dict:
 
 
 @tool(
-    description="List all Entra groups a user belongs to. Returns group names, types, and descriptions."
+    description=(
+        "List the Entra ID groups a user is a direct member of, by email or UPN. Returns group id, "
+        "name, type and description — useful for working out someone's access or which teams they "
+        "belong to. Only direct membership is returned; groups inherited through nested groups do "
+        "not appear. Requires GroupMember.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_user_groups",),
 )
-async def get_user_groups(params: UserIdentifierInput, context: dict) -> list[dict]:
+async def directory_list_user_groups(params: UserIdentifierInput, context: dict) -> list[dict]:
     """List the groups a user is a direct member of.
 
     Two Graph gotchas this code intentionally works around — the same ones
@@ -200,9 +231,16 @@ async def get_user_groups(params: UserIdentifierInput, context: dict) -> list[di
 
 
 @tool(
-    description="Search Entra groups by display name. Returns group name, type, description, and member count."
+    description=(
+        "Find Entra ID groups by name or keyword. Returns group id, display name, type (security "
+        "or Microsoft 365), description and member count. Use the returned group id with "
+        "directory_list_group_members or directory_get_group. Every Microsoft Teams team is backed "
+        "by a group, so this also finds teams. Requires Group.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_groups",),
 )
-async def search_groups(params: SearchGroupsInput, context: dict) -> list[dict]:
+async def directory_search_groups(params: SearchGroupsInput, context: dict) -> list[dict]:
     # Use app-only token for tenant-wide group search; OBO falls through
     # to null displayName.
     token = _resolve_group_token(context, "search_groups")
@@ -227,9 +265,16 @@ async def search_groups(params: SearchGroupsInput, context: dict) -> list[dict]:
 
 
 @tool(
-    description="List all members of an Entra group. Returns user profiles. Use group_id from search_groups."
+    description=(
+        "List the people in an Entra ID group, given a group id from directory_search_groups. "
+        "Returns each member's name, email, job title and department, plus the total count. Use to "
+        "answer 'who is on the claims team'. Only direct members are listed — people who belong "
+        "via a nested group are not included. Requires GroupMember.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_group_members",),
 )
-async def get_group_members(params: GroupIdInput, context: dict) -> dict:
+async def directory_list_group_members(params: GroupIdInput, context: dict) -> dict:
     token = _resolve_group_token(context, "get_group_members")
     max_r = min(max(params.max_results, 1), 200)
 
@@ -268,8 +313,17 @@ async def get_group_members(params: GroupIdInput, context: dict) -> dict:
     }
 
 
-@tool(description="Get details of an Entra group including type, description, and creation date.")
-async def get_group_details(params: GroupIdInput, context: dict) -> dict:
+@tool(
+    description=(
+        "Get one Entra ID group's details by id: display name, description, type, email address, "
+        "visibility and creation date. Use when a group id is already known and its properties "
+        "matter rather than its membership — directory_list_group_members returns who is in it. "
+        "Requires Group.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_group_details",),
+)
+async def directory_get_group(params: GroupIdInput, context: dict) -> dict:
     token = _resolve_group_token(context, "get_group_details")
 
     data = await graph_get(

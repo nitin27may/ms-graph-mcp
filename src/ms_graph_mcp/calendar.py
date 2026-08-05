@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, tool
 
 _SELECT_EVENT = "id,subject,start,end,location,organizer,attendees,bodyPreview,isOnlineMeeting,onlineMeeting,webLink"
 _SELECT_BRIEF = "id,subject,start,end,organizer,isOnlineMeeting"
@@ -33,9 +33,19 @@ class GetCalendarEventsRangeInput(BaseModel):
 
 
 @tool(
-    description="Get the user's upcoming meetings for the next N days. Returns subject, time, attendees, and join URL."
+    description=(
+        "List the signed-in user's upcoming calendar events for the next N days, soonest first. "
+        "Returns id, subject, start and end times, organiser and whether it is online. This is the "
+        "tool for 'what's on my calendar'. Use calendar_list_events_in_range for a specific "
+        "window, and calendar_get_event for full detail including the join URL. "
+        "Requires Calendars.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_upcoming_meetings",),
 )
-async def get_upcoming_meetings(params: GetUpcomingMeetingsInput, context: dict) -> list[dict]:
+async def calendar_list_upcoming_events(
+    params: GetUpcomingMeetingsInput, context: dict
+) -> list[dict]:
     token = context["access_token"]
     now = datetime.now(UTC)
     end = now + timedelta(days=params.days_ahead)
@@ -55,16 +65,35 @@ async def get_upcoming_meetings(params: GetUpcomingMeetingsInput, context: dict)
 
 
 @tool(
-    description="Get full details of a specific calendar event including agenda, location, and online meeting link."
+    description=(
+        "Get one calendar event in full by its id: subject, times, organiser, location, agenda "
+        "preview, the Teams join URL and the complete attendee list with each person's response "
+        "status. Takes an event id from calendar_list_upcoming_events or "
+        "calendar_list_events_in_range. Use calendar_get_event_attendees when only the attendee "
+        "list is needed. Requires Calendars.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_meeting_details",),
 )
-async def get_meeting_details(params: GetMeetingDetailsInput, context: dict) -> dict:
+async def calendar_get_event(params: GetMeetingDetailsInput, context: dict) -> dict:
     token = context["access_token"]
     data = await graph_get(token, f"/me/events/{params.meeting_id}", **{"$select": _SELECT_EVENT})
     return _full_event(data)
 
 
-@tool(description="Get the attendee list for a calendar event including their response status.")
-async def get_meeting_attendees(params: GetMeetingAttendeesInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List who was invited to a calendar event and how each person replied — accepted, "
+        "declined, tentative or no response. Returns email, display name and response status per "
+        "attendee. Use this when the question is about who is coming; calendar_get_event returns "
+        "the same list alongside the event's other detail. Requires Calendars.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_meeting_attendees",),
+)
+async def calendar_get_event_attendees(
+    params: GetMeetingAttendeesInput, context: dict
+) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token, f"/me/events/{params.meeting_id}", **{"$select": "attendees,organizer"}
@@ -81,9 +110,16 @@ async def get_meeting_attendees(params: GetMeetingAttendeesInput, context: dict)
 
 
 @tool(
-    description="Get calendar events within a specific date range. Useful for finding related past meetings."
+    description=(
+        "List calendar events between two dates, in chronological order. Use for any window that "
+        "is not simply 'the next few days' — last week's meetings, a specific month, or a range "
+        "the user names. Dates are ISO 8601 (2026-01-15) and the whole of both end days is "
+        "included. Returns id, subject, times and organiser. Requires Calendars.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_calendar_events_range",),
 )
-async def get_calendar_events_range(
+async def calendar_list_events_in_range(
     params: GetCalendarEventsRangeInput, context: dict
 ) -> list[dict]:
     token = context["access_token"]
