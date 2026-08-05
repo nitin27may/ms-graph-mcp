@@ -30,6 +30,11 @@ change between minor versions; breaking changes are called out explicitly.
   permission denial, so a model stops retrying a call that can never succeed.
 - `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
   `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- **Toolset profiles.** `GRAPH_MCP_TOOLSETS` selects which namespaces are advertised, defaulting to
+  `core` (23 read tools, ~4,200 tokens) rather than all 53 (~9,200). Over HTTP an `X-Toolsets`
+  header may narrow further for a single request but can never widen beyond the startup value.
+  Filters visibility only — the tier gates are untouched, and a hidden tool is still refused at
+  dispatch if it was never permitted.
 - **Interactive sign-in for the stdio transport.** Set `GRAPH_MCP_CLIENT_ID` and
   `GRAPH_MCP_TENANT_ID` and the server signs the user in through the browser — normal Microsoft 365
   SSO including MFA and conditional access — instead of requiring a pre-acquired token in a config

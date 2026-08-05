@@ -44,6 +44,15 @@ class GraphMcpConfig(BaseSettings):
         default=False,
         validation_alias=AliasChoices("GRAPH_MCP_DISABLE_SSL_VERIFY"),
     )
+    # Named toolset profiles this deployment exposes, comma-separated. This is
+    # the ceiling: an X-Toolsets header may narrow it, never widen it. Defaults
+    # to "core" rather than "all" so a client is not handed 85 tool definitions
+    # it will not use. See toolsets.py.
+    toolsets: str = Field(
+        default="core",
+        validation_alias=AliasChoices("GRAPH_MCP_TOOLSETS"),
+    )
+
     # Remove the write tier entirely at startup: never resolved, never
     # advertised, never dispatchable. Independent of, and stricter than, the
     # per-request write scope — an operator can deploy a provably read-only

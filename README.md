@@ -241,6 +241,7 @@ Everything else, including the `env` block, stays the same.
 | `GRAPH_MCP_CLIENT_ID` | Entra application (client) id. Enables interactive sign-in. |
 | `GRAPH_MCP_TENANT_ID` | Entra directory (tenant) id. Defaults to `common`. |
 | `GRAPH_MCP_SCOPES` | Comma-separated delegated scopes to request. Defaults to a read-only set. |
+| `GRAPH_MCP_TOOLSETS` | Which tool profiles to expose. Defaults to `core`. See below. |
 | `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 23 write tools. **Default off.** |
 | `GRAPH_MCP_USER_EMAIL` | Caller identity, used for tenant-scoping in some tools. Optional. |
 | `GRAPH_MCP_ACCESS_TOKEN` | A pre-acquired delegated token, instead of signing in. For CI. |
@@ -352,6 +353,7 @@ it. MSAL uses PKCE instead.
 | Application (client) id | `GRAPH_MCP_CLIENT_ID` / `AZURE_AD_CLIENT_ID` | `""` |
 | Directory (tenant) id | `GRAPH_MCP_TENANT_ID` / `AZURE_AD_TENANT_ID` | `common` |
 | Delegated scopes to request at sign-in | `GRAPH_MCP_SCOPES` | read-only set |
+| Tool profiles to expose | `GRAPH_MCP_TOOLSETS` | `core` |
 | Expose the write tools | `GRAPH_MCP_WRITE_SCOPE` | `false` |
 | Caller identity, for tenant-scoping | `GRAPH_MCP_USER_EMAIL` | `""` |
 | Always use device code, never the browser | `GRAPH_MCP_FORCE_DEVICE_CODE` | `false` |
@@ -396,6 +398,43 @@ authentication altogether; see [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md
 `GRAPH_MCP_READ_ONLY` is stronger than leaving `GRAPH_MCP_WRITE_SCOPE` off: it removes the write
 tools from the deployment entirely, so no caller can reach them whatever they ask for. See
 [SECURITY.md](SECURITY.md) for what to change before exposing this beyond localhost.
+
+## Toolset profiles
+
+85 tools is a lot to put in front of a model. `GRAPH_MCP_TOOLSETS` selects named profiles, each a
+group of namespaces:
+
+| Profile | Namespaces | Read tools | Approx. tokens |
+|---|---|---:|---:|
+| `core` *(default)* | search, mail, calendar, files, people | 23 | ~4,200 |
+| `mail` | mail | 5 | ~800 |
+| `calendar` | calendar | 6 | ~1,500 |
+| `meetings` | meetings, calendar | 13 | ~2,900 |
+| `files` | files | 6 | ~900 |
+| `chat` | chat | 7 | ~1,000 |
+| `people` | people | 5 | ~750 |
+| `directory` | directory, people | 12 | ~1,900 |
+| `tasks` | tasks | 5 | ~830 |
+| `notes` | notes | 4 | ~570 |
+| `search` | search | 1 | ~290 |
+| `all` | everything | 53 | ~9,200 |
+
+Combine them with commas:
+
+```
+GRAPH_MCP_TOOLSETS=mail,calendar,tasks
+```
+
+**`core` is the default, so some tools are not advertised unless you ask for them.** If you want
+Teams chat, Planner, OneNote, meeting transcripts or directory lookups, name those profiles — or set
+`GRAPH_MCP_TOOLSETS=all` to expose everything.
+
+Over HTTP a caller may send `X-Toolsets` to narrow further for one request. **It can only narrow.**
+The startup value is a ceiling, so a client asking for `all` gains nothing the deployment did not
+already enable.
+
+This filters *visibility*, not authority. A hidden tool is simply not listed; the write-scope and
+internal-tier gates are what actually stop a call, and they are unaffected.
 
 ## Tool surface
 

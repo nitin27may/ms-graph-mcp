@@ -8,14 +8,21 @@ from typing import Any
 import mcp.types as types
 import pytest
 
-from ms_graph_mcp.config import reset_config
+from ms_graph_mcp.config import get_config, reset_config
 
 
 @pytest.fixture(autouse=True)
 def _reset_graph_config():
     """build_app() mutates the cached config singleton; reset between tests so
-    a shared_secret set by one test never leaks into another."""
+    a shared_secret set by one test never leaks into another.
+
+    Also pins the toolset profile to ``all``. The shipped default is ``core``,
+    which is right for a real deployment but would mean every tier test was
+    quietly asserting profile filtering as well. Tests that care about profiles
+    set their own config.
+    """
     reset_config()
+    get_config().toolsets = "all"
     yield
     reset_config()
 

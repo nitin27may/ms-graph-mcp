@@ -36,6 +36,7 @@ from ms_graph_mcp.allowlists import (
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.context import current_request_context
 from ms_graph_mcp.tooling import ToolSpec, get_registry
+from ms_graph_mcp.toolsets import filter_tool_names
 
 logger = logging.getLogger(__name__)
 
@@ -119,19 +120,34 @@ async def list_graph_tools(
     authorization presented on the request, which is what makes the
     scope-dependent surface below conformant rather than a quirk.
     """
-    tools = [_to_mcp_tool(spec) for spec in resolve_read_tools()]
     request_ctx = current_request_context.get()
+    cfg = get_config()
+
+    def _visible(specs: list[ToolSpec]) -> list[ToolSpec]:
+        """Narrow a tier to the profiles in effect.
+
+        Visibility only — dispatch still gates every tier independently, so a
+        tool hidden here is refused rather than quietly reachable.
+        """
+        allowed = set(
+            filter_tool_names([s.name for s in specs], cfg.toolsets, request_ctx.get("toolsets"))
+        )
+        return [s for s in specs if s.name in allowed]
+
+    tools = [_to_mcp_tool(spec) for spec in _visible(resolve_read_tools())]
     # GRAPH_MCP_READ_ONLY removes the write tier from the deployment entirely,
     # regardless of what the caller asks for. Enforced again in dispatch below —
     # hiding a tool is a context-efficiency measure, not a security boundary.
     read_only = get_config().read_only
     if request_ctx.get("write_scope") and not read_only:
-        tools.extend(_to_mcp_tool(spec) for spec in resolve_write_tools())
+        tools.extend(_to_mcp_tool(spec) for spec in _visible(resolve_write_tools()))
     # Internal (deterministic) tier — advertised ONLY to trusted internal
     # callers (machine principal + X-Internal-Scope), never to agents/external
     # clients.
     if request_ctx.get("internal_scope"):
         tools.extend(_to_mcp_tool(spec) for spec in resolve_internal_tools())
+    # The internal tier is deliberately NOT profile-filtered: it is already
+    # gated on the machine principal, and its callers ask for tools by name.
     return types.ListToolsResult(
         tools=tools,
         ttlMs=_TOOLS_CACHE_TTL_MS,

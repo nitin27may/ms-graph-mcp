@@ -44,7 +44,7 @@ class TestReadOnlyDeployment:
         assert GraphMcpConfig(_env_file=None).read_only is False
 
     async def test_write_tools_are_not_advertised(self, list_tools):
-        set_config(GraphMcpConfig(_env_file=None, read_only=True))
+        set_config(GraphMcpConfig(_env_file=None, read_only=True, toolsets="all"))
         cv = current_request_context.set({"access_token": "tok", "write_scope": True})
         try:
             names = {tool.name for tool in await list_tools()}
@@ -61,7 +61,7 @@ class TestReadOnlyDeployment:
         security boundary — a caller can name any tool it likes. The refusal has
         to happen at dispatch, and it has to ignore the write scope entirely.
         """
-        set_config(GraphMcpConfig(_env_file=None, read_only=True))
+        set_config(GraphMcpConfig(_env_file=None, read_only=True, toolsets="all"))
         cv = current_request_context.set({"access_token": "tok", "write_scope": True})
         try:
             result = await call_tool(name, {})
@@ -76,7 +76,7 @@ class TestReadOnlyDeployment:
 
     async def test_read_tools_still_work(self, call_tool, monkeypatch):
         """Read-only must not break reading."""
-        set_config(GraphMcpConfig(_env_file=None, read_only=True))
+        set_config(GraphMcpConfig(_env_file=None, read_only=True, toolsets="all"))
 
         class _Reg:
             def canonical_name(self, name):
@@ -95,7 +95,8 @@ class TestReadOnlyDeployment:
 
     async def test_write_tools_work_again_when_the_flag_is_off(self, list_tools):
         """Guards against the flag being read once and cached wrongly."""
-        set_config(GraphMcpConfig(_env_file=None, read_only=False))
+        # toolsets="all" so this asserts the read_only flag, not profile filtering.
+        set_config(GraphMcpConfig(_env_file=None, read_only=False, toolsets="all"))
         cv = current_request_context.set({"access_token": "tok", "write_scope": True})
         try:
             names = {tool.name for tool in await list_tools()}

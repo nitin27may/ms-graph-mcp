@@ -90,6 +90,13 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
             "write_scope": request.headers.get("X-Write-Scope", "").lower() == "true",
             "internal_scope": internal_scope,
         }
+        # Narrowing only — server.py intersects this with the startup ceiling,
+        # so an untrusted caller cannot reach a namespace the deployment did not
+        # enable.
+        requested_toolsets = request.headers.get("X-Toolsets", "").strip()
+        if requested_toolsets:
+            ctx["toolsets"] = requested_toolsets
+
         entra_app_token = request.headers.get("X-Entra-App-Token", "")
         if entra_app_token:
             ctx["entra_app_token"] = entra_app_token
