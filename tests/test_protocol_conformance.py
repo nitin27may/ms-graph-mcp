@@ -158,7 +158,7 @@ async def test_missing_token_fails_closed_over_the_protocol(graph_client_context
 def test_tool_spec_annotations_project_onto_the_wire_type():
     """The projection itself, independent of whether any tool uses it yet.
 
-    Phase A delivers the mechanism; Phase B applies it to the existing 60 tools.
+    Phase A delivers the mechanism; Phase B applies it to the existing 85 tools.
     This proves the mechanism so the two can be reviewed apart.
     """
     from ms_graph_mcp.server import _to_mcp_tool

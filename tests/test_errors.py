@@ -70,7 +70,7 @@ class TestRetryability:
 
 
 class TestGraphErrorMapping:
-    """One place translates HTTP status to meaning, so 90 tools need not."""
+    """One place translates HTTP status to meaning, so 85 tools need not."""
 
     def test_403_becomes_scope_denied_with_the_named_scope(self):
         err = graph_error_response(

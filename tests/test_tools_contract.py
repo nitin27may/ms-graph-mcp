@@ -180,7 +180,7 @@ class TestToolQualityContract:
         none is "non-read-only, potentially destructive, non-idempotent,
         open-world" — so a client may prompt the user before a harmless read.
 
-    These are tests rather than review notes because a 90-tool surface only stays
+    These are tests rather than review notes because an 85-tool surface only stays
     consistent if drift breaks the build.
     """
 

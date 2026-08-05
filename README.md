@@ -1,72 +1,100 @@
 # ms-graph-mcp
 
+[![PyPI](https://img.shields.io/pypi/v/ms-graph-mcp)](https://pypi.org/project/ms-graph-mcp/)
 [![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
+[![Container](https://img.shields.io/badge/ghcr.io-ms--graph--mcp-blue)](https://github.com/nitin27may/ms-graph-mcp/pkgs/container/ms-graph-mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/nitin27may/ms-graph-mcp/blob/main/LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 85
 tools across mail, calendar, meetings (including transcripts), Teams chat, files, SharePoint,
-people, contacts, directory, tasks and OneNote, over **stdio** or **Streamable HTTP**.
+search, people, contacts, directory, tasks and OneNote, over **stdio** or **Streamable HTTP**.
 
-**Signs you in with your own Microsoft account** — browser SSO, no token to paste, no client
-secret.
+**Signs you in with your own Microsoft account** — browser SSO, no token to paste, no client secret.
 
-- **No `msgraph-sdk`, no `azure-identity`** — the Graph client is raw `httpx`, so the dependency
-  tree stays small and the wire behaviour is inspectable.
+![The ms-graph-mcp tools listed in VS Code's Configure Tools panel](https://raw.githubusercontent.com/nitin27may/ms-graph-mcp/main/docs/tools.png)
+
+- **No `msgraph-sdk`, no `azure-identity`** — the Graph client is raw `httpx`, so the dependency tree
+  stays small and the wire behaviour is inspectable.
+- **Read/write separation is enforced, not advisory** — write tools are hidden *and* refused unless
+  the caller explicitly opts in.
 - **Auth-agnostic by default** — tools receive an already-acquired Graph token via the request
   context. The server can also perform its own on-behalf-of exchange when you want it to act as a
   proper OAuth resource server.
-- **Read/write separation is enforced, not advisory** — write tools are hidden and refused unless
-  the caller explicitly opts in.
 
 > **Status: early.** Extracted from a production agent platform where it has been running against a
-> real tenant. The code is battle-tested; the packaging, docs, and public API surface are new.
-> Expect the config surface to move before 1.0.
+> real tenant. The code is battle-tested; the packaging and public API surface are newer. Expect the
+> config surface to move before 1.0.
 
 ## Install
 
-> **Not on PyPI yet.** `pip install ms-graph-mcp` and `uvx --from ms-graph-mcp` will not work until
-> the first release. Run it from a clone — the Quick start below covers it, and every client config
-> in this README uses that path.
+Requires **Python 3.12+**. Two paths — pick the one that matches what you want to do.
 
-Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
+### A. Use the package
 
-### Trying a pre-release
-
-Release candidates are tagged in this repository, so you can run one directly without waiting for a
-PyPI release and without a TestPyPI account:
+Nothing to clone. [uv](https://docs.astral.sh/uv/) runs it straight from PyPI:
 
 ```bash
-uvx --from git+https://github.com/nitin27may/ms-graph-mcp@v0.2.0-rc1 ms-graph-mcp
-pip install git+https://github.com/nitin27may/ms-graph-mcp@v0.2.0-rc1
+uvx --from ms-graph-mcp ms-graph-mcp          # stdio, for an MCP client
+uvx --from ms-graph-mcp ms-graph-mcp-http     # Streamable HTTP
 ```
 
-Once the first stable version is on PyPI, candidates are published there too and the usual
-pre-release flags work:
+or install it into an environment:
 
 ```bash
-pip install --pre ms-graph-mcp        # newest, including candidates
-pip install ms-graph-mcp==0.2.0rc1    # a specific one; no --pre needed for an exact pin
+pip install ms-graph-mcp
 ```
 
-A candidate never reaches anyone who did not ask for one — pip skips pre-releases unless you pass
-`--pre` or pin the version exactly.
+Release candidates are published too. pip skips them unless you ask:
 
-**TestPyPI is not the place to get these.** Every release is published there first, but that is a
-rehearsal of the publishing process, not a distribution channel: it can be wiped without notice, and
-it does not mirror PyPI, so installing from it needs `--extra-index-url https://pypi.org/simple/`
-just to resolve ordinary dependencies. Use a git tag, or `--pre`.
+```bash
+pip install --pre ms-graph-mcp          # newest, including candidates
+pip install ms-graph-mcp==0.3.0rc1      # a specific one; no --pre needed for an exact pin
+```
 
-## Quick start
+A container image is on GHCR for the HTTP transport — see
+[docs/hosting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/hosting.md#docker).
+
+> **TestPyPI is not a distribution channel.** Every release is published there first, but that is a
+> rehearsal of the publishing process: it can be wiped without notice and does not mirror PyPI, so
+> installing from it needs `--extra-index-url https://pypi.org/simple/` just to resolve ordinary
+> dependencies. Use PyPI, or `--pre`.
+
+### B. Run from source
+
+For hacking on it, forking it, or running an unreleased change:
+
+```bash
+git clone https://github.com/nitin27may/ms-graph-mcp
+cd ms-graph-mcp
+uv sync                       # creates .venv and installs everything
+uv run ms-graph-mcp           # check it starts
+```
+
+`uv sync` is the only setup step. See
+[CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) before
+opening a pull request — the tool allowlists and the tier separation have invariants that are
+enforced rather than advisory.
+
+To point an MCP client at your clone, you need its absolute path — clients do not inherit your
+working directory and most do not expand `~`:
+
+```bash
+cd ms-graph-mcp && pwd
+# /Users/you/workspace/ms-graph-mcp
+```
+
+Then use the source form of the config in
+[Configure your MCP client](#running-from-source-instead) below.
+
+## Set up the Entra app
 
 You need an **Entra ID app registration** — about two minutes. **Do not create a client secret:**
-this registers as a *public client*, which signs you in through your browser using PKCE. A secret
-on a program running on your own machine would be readable by anyone with the config file, which is
-why the flow is designed not to need one. Nothing is pasted into a config file except two ids,
-neither of which is sensitive.
-
-### 1. Register the app
+this registers as a *public client*, which signs you in through your browser using PKCE. A secret on
+a program running on your own machine would be readable by anyone with the config file, which is why
+the flow is designed not to need one. Nothing goes into a config file except two ids, neither of
+which is sensitive.
 
 In the [Entra portal](https://entra.microsoft.com) → **App registrations** → **New registration**:
 
@@ -78,7 +106,7 @@ Leave **Certificates & secrets** alone — you do not need anything from it.
 
 Then, on the new app:
 
-- **Authentication** → enable **Allow public client flows** (this permits device-code sign-in)
+- **Authentication** → enable **Allow public client flows**
 - **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**, and
   add what you want the agent to reach. A sensible read-only starting set:
 
@@ -87,71 +115,44 @@ Then, on the new app:
   People.Read  Chat.Read  Tasks.Read  Notes.Read  Contacts.Read
   ```
 
-  The complete, copy-paste consent set — and which permission each individual tool needs — is in
+  The complete copy-paste consent sets — and which permission each individual tool needs — are in
   [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md).
 
-Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
+Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page. That is
+everything you need.
 
-### 2. Get the code and run it
+## Configure your MCP client
 
-The package is **not on PyPI yet**, so run it from a clone. Everything below assumes
-`~/workspace/ms-graph-mcp` — substitute your own path.
+Every MCP client that speaks stdio takes the same three things — a command, its arguments, and an
+environment block:
 
-```bash
-git clone https://github.com/nitin27may/ms-graph-mcp ~/workspace/ms-graph-mcp
-cd ~/workspace/ms-graph-mcp
-uv sync                       # creates .venv and installs everything
+```jsonc
+{
+  "command": "uvx",
+  "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
+  "env": {
+    "GRAPH_MCP_CLIENT_ID": "<application-client-id>",
+    "GRAPH_MCP_TENANT_ID": "<directory-tenant-id>"
+  }
+}
 ```
 
-That gives you:
+Where that block goes, and what the surrounding key is called, differs:
 
-```
-~/workspace/ms-graph-mcp/
-├── pyproject.toml            # defines the ms-graph-mcp console script
-├── uv.lock
-├── src/ms_graph_mcp/         # the server
-├── tests/
-├── docs/
-└── .venv/                    # created by uv sync
-```
+| Client | Config file | Key |
+|---|---|---|
+| VS Code | `.vscode/mcp.json` (workspace), or **MCP: Open User Configuration** | `servers` |
+| Claude Code | `claude mcp add …` — no file to edit | — |
+| Claude Desktop | macOS `~/Library/Application Support/Claude/claude_desktop_config.json` · Windows `%APPDATA%\Claude\claude_desktop_config.json` | `mcpServers` |
+| Cursor | `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global) | `mcpServers` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` |
+| MCP Inspector | command line, `-e` flags | — |
 
-Check it starts:
-
-```bash
-GRAPH_MCP_CLIENT_ID=<application-client-id> \
-GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
-  uv run ms-graph-mcp
-```
-
-Your browser opens for Microsoft 365 sign-in. The process then sits waiting for a client to speak
-MCP to it over stdin — that is correct; press Ctrl-C. The sign-in is cached in
-`~/.ms-graph-mcp/token_cache.json` (owner-readable only), so it will not prompt again.
-
-To run it from anywhere — which is what an MCP client needs, since it will not be launched from
-this directory — use `--directory`:
-
-```bash
-uv run --directory ~/workspace/ms-graph-mcp ms-graph-mcp
-```
-
-**MCP clients need an absolute path.** They do not inherit your shell's working directory, and most
-do not expand `~`. Get yours with:
-
-```bash
-cd ~/workspace/ms-graph-mcp && pwd
-# /Users/you/workspace/ms-graph-mcp
-```
-
-## Add it to your client
-
-Every example uses the local clone, because that is what works today. **Replace
-`/Users/you/workspace/ms-graph-mcp` with your own absolute path** — the output of `pwd` in the
-clone. After the first PyPI release you can swap the command for `uvx` (see the end of this
-section).
+The first sign-in opens your browser for normal Microsoft 365 SSO — including MFA and conditional
+access. The result is cached in `~/.ms-graph-mcp/token_cache.json`, owner-readable only, so it does
+not prompt again.
 
 ### VS Code
-
-Create `.vscode/mcp.json` in whichever workspace you want it available in:
 
 ```jsonc
 {
@@ -162,12 +163,8 @@ Create `.vscode/mcp.json` in whichever workspace you want it available in:
   "servers": {
     "ms-graph": {
       "type": "stdio",
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory", "/Users/you/workspace/ms-graph-mcp",
-        "ms-graph-mcp"
-      ],
+      "command": "uvx",
+      "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
       "env": {
         "GRAPH_MCP_CLIENT_ID": "${input:clientId}",
         "GRAPH_MCP_TENANT_ID": "${input:tenantId}"
@@ -178,11 +175,9 @@ Create `.vscode/mcp.json` in whichever workspace you want it available in:
 ```
 
 Reload the window. VS Code prompts once for the two ids and remembers them, so this file is safe to
-commit. Open the Chat view, switch to **Agent** mode, and the tools appear under the tools picker.
-`MCP: List Servers` shows status and output if it does not connect.
-
-For every workspace rather than one, run **MCP: Open User Configuration** and put the same
-`servers` block there.
+commit. Open the Chat view, switch to **Agent** mode, and the tools appear under the tools picker —
+that is the panel in the screenshot above. **Confirm with** `MCP: List Servers`, which shows status
+and output if it does not connect.
 
 ### Claude Code
 
@@ -190,26 +185,19 @@ For every workspace rather than one, run **MCP: Open User Configuration** and pu
 claude mcp add ms-graph \
   --env GRAPH_MCP_CLIENT_ID=<application-client-id> \
   --env GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
-  -- uv run --directory /Users/you/workspace/ms-graph-mcp ms-graph-mcp
+  -- uvx --from ms-graph-mcp ms-graph-mcp
 ```
 
-Then `/mcp` inside Claude Code to confirm it connected and see the tool list.
+**Confirm with** `/mcp` inside Claude Code — it lists the server and its tools.
 
 ### Claude Desktop
-
-`claude_desktop_config.json` — macOS `~/Library/Application Support/Claude/`,
-Windows `%APPDATA%\Claude\`:
 
 ```jsonc
 {
   "mcpServers": {
     "ms-graph": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory", "/Users/you/workspace/ms-graph-mcp",
-        "ms-graph-mcp"
-      ],
+      "command": "uvx",
+      "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
       "env": {
         "GRAPH_MCP_CLIENT_ID": "<application-client-id>",
         "GRAPH_MCP_TENANT_ID": "<directory-tenant-id>"
@@ -219,7 +207,12 @@ Windows `%APPDATA%\Claude\`:
 }
 ```
 
-Restart Claude Desktop fully — quit it, do not just close the window.
+**Confirm by** quitting Claude Desktop fully — not just closing the window — reopening it, and
+looking for the tools icon in the composer.
+
+### Cursor and Windsurf
+
+Both use the same `mcpServers` shape as Claude Desktop, in the file named in the table above.
 
 ### MCP Inspector
 
@@ -227,48 +220,46 @@ The quickest way to check the server independently of any client:
 
 ```bash
 npx @modelcontextprotocol/inspector \
-  uv run --directory /Users/you/workspace/ms-graph-mcp ms-graph-mcp \
+  uvx --from ms-graph-mcp ms-graph-mcp \
   -e GRAPH_MCP_CLIENT_ID=<application-client-id> \
   -e GRAPH_MCP_TENANT_ID=<directory-tenant-id>
 ```
 
 Needs Node 22.19+. It opens a browser UI where you can list tools and call them by hand — worth
-doing before blaming your client.
+doing before blaming your client. There is a scriptable `--cli` mode too; see
+[docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md).
 
 > **Pass variables with `-e`, not from your shell.** Inspector does not give the server it spawns
 > your environment, so `GRAPH_MCP_CLIENT_ID=… npx @modelcontextprotocol/inspector …` starts the
-> server with *no* client id and it falls back to defaults. The `-e` flags go **after** the server
-> command.
+> server with *no* client id. The `-e` flags go **after** the server command.
 
-There is a scriptable `--cli` mode too — see [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md).
+### Running from source instead
 
-### Two things that catch people out
+Same blocks as above — swap the command and args for your clone's absolute path:
 
-**`uv` must be on the client's PATH.** GUI apps launched from Finder or the Dock do not inherit
-your shell's PATH, so a client can fail to start the server with an unhelpful error. If that
-happens, use the absolute path to `uv`:
-
-```bash
-which uv     # e.g. /Users/you/.local/bin/uv
+```jsonc
+"command": "uv",
+"args": ["run", "--directory", "/Users/you/workspace/ms-graph-mcp", "ms-graph-mcp"]
 ```
 
-and put that in `"command"` instead of `"uv"`.
+Two things catch people out here:
+
+**`uv` must be on the client's PATH.** GUI apps launched from Finder or the Dock do not inherit your
+shell's PATH, so a client can fail to start the server with an unhelpful error. If that happens, put
+the output of `which uv` in `"command"` instead of the bare name.
 
 **`--directory` is not optional.** Without it, `uv run` resolves against whatever directory the
 client happened to launch from, which will not be the project.
 
-### After the first PyPI release
+### Something not working?
 
-Once published, no clone is needed — replace the command and args with:
+[docs/troubleshooting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/troubleshooting.md)
+covers the Entra errors, Conditional Access, corporate TLS proxies, and the "server disconnected"
+that is almost always a startup error your client is hiding.
 
-```jsonc
-"command": "uvx",
-"args": ["--from", "ms-graph-mcp", "ms-graph-mcp"]
-```
+## Configuration
 
-Everything else, including the `env` block, stays the same.
-
-### stdio settings
+Two settings get you running; everything else has a working default.
 
 | Env var | Purpose |
 |---|---|
@@ -277,271 +268,13 @@ Everything else, including the `env` block, stays the same.
 | `GRAPH_MCP_SCOPES` | Comma-separated delegated scopes to request. Defaults to a read-only set. |
 | `GRAPH_MCP_TOOLSETS` | Which tool profiles to expose. Defaults to `core`. See below. |
 | `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 23 write tools. **Default off.** |
-| `GRAPH_MCP_DISABLE_SSL_VERIFY` | `true` to skip TLS certificate verification for Graph HTTP calls. Use only as a corporate-proxy workaround; see troubleshooting. |
-| `GRAPH_MCP_USER_EMAIL` | Caller identity, used for tenant-scoping in some tools. Optional. |
-| `GRAPH_MCP_ACCESS_TOKEN` | A pre-acquired delegated token, instead of signing in. For CI. |
-| `GRAPH_MCP_FORCE_DEVICE_CODE` | `true` to skip the browser and always use device-code sign-in. |
-
-**Turning on write tools.** They are off by default: with them enabled an agent can send mail,
-book meetings and change files as you. To use them, add the matching write scopes to
-`GRAPH_MCP_SCOPES` *and* set `GRAPH_MCP_WRITE_SCOPE=true`:
-
-```
-GRAPH_MCP_SCOPES=User.Read,Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Files.ReadWrite.All,Tasks.ReadWrite,ChatMessage.Send
-GRAPH_MCP_WRITE_SCOPE=true
-```
-
-### Troubleshooting
-
-| Symptom | Cause |
-|---|---|
-| `AADSTS7000218` on sign-in | **Allow public client flows** is not enabled on the app registration. |
-| `AADSTS50011` redirect mismatch | The redirect URI is not `http://localhost`, or the platform is not *Public client/native*. |
-| `SCOPE_DENIED` from a tool | The permission that tool needs was not consented. The error names it — add it in **API permissions** and sign in again. |
-| Sign-in prompts every time | The cache at `~/.ms-graph-mcp/token_cache.json` is not writable. |
-| Browser never opens | Expected over SSH or in containers — use the device code printed to stderr. |
-| `AADSTS53003`, or "You cannot access this right now" **after** a successful sign-in | A Conditional Access policy requires a registered or compliant device. See below. |
-| Client shows "server disconnected" | Run the same command in a terminal; startup errors go to stderr and the client usually hides them. |
-| `421 Misdirected Request` from a hosted deployment | `GRAPH_MCP_RESOURCE_URL` is not set, so the transport trusts only localhost. See [running hosted](#set-graph_mcp_resource_url-when-you-deploy-behind-a-proxy). |
-| `[SSL: CERTIFICATE_VERIFY_FAILED]` when calling Graph tools | A TLS-inspecting proxy (Netskope/Zscaler/etc.) is resigning Graph traffic with a certificate chain your Python/OpenSSL runtime does not trust. |
-
-#### SSL certificate verify failures behind corporate proxies
-
-When this server calls Microsoft Graph, `httpx` validates the TLS chain using the Python/OpenSSL
-trust store of the process running `ms-graph-mcp`.
-
-In corporate networks with TLS inspection, Graph certificates are often re-issued by a proxy CA.
-If that CA chain is not accepted by your runtime, Graph calls fail with errors like:
-
-```text
-[SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate in certificate chain
-```
-
-or
-
-```text
-[SSL: CERTIFICATE_VERIFY_FAILED] Basic Constraints of CA cert not marked critical
-```
-
-Use this workaround only when you have confirmed proxy-related TLS interception and cannot quickly
-repair trust-chain validation:
-
-```jsonc
-"GRAPH_MCP_DISABLE_SSL_VERIFY": "true"
-```
-
-Where to set it:
-
-- VS Code workspace config (`.vscode/mcp.json`) under the server `env` block.
-- User-level MCP config for clients that support per-server environment variables.
-
-Security trade-off:
-
-- This disables certificate validation for Graph HTTP calls from this server process.
-- It reduces protection against machine-in-the-middle attacks and should be treated as a temporary
-  compatibility escape hatch, not a default posture.
-
-Preferred long-term fix:
-
-1. Install and trust the corporate proxy CA chain in the runtime trust store used by Python/OpenSSL.
-2. Remove `GRAPH_MCP_DISABLE_SSL_VERIFY` (or set it back to `false`).
-3. Restart the MCP client/server process and verify Graph calls succeed with TLS verification on.
-
-#### AADSTS53003 — blocked by Conditional Access
-
-Your credentials were accepted and the sign-in *succeeded*; a policy then refused the token. Click
-**More details** on the error page and look at the device lines:
-
-```
-Error Code:        53003
-Device platform:   macOS
-Device state:      Unregistered      <- the cause
-Device identifier: Not available
-```
-
-Your tenant requires a **registered or compliant device**, and a plain system browser has no device
-identity to present. This is why Outlook and Teams still work: they sign in through the **Microsoft
-Enterprise SSO plug-in** (shipped with Company Portal / Intune), which holds that identity.
-
-**Nothing in the app registration fixes this.** Conditional Access is evaluated separately from app
-configuration — not API permissions, not redirect URIs, not "allow public client flows". Your
-registration is already fine; the sign-in got past it.
-
-Two real fixes:
-
-1. **Register the device.** Install Company Portal and sign in; device state becomes Registered and
-   the policy is satisfied. Your existing configuration then works unchanged.
-2. **Ask an admin to exclude the app.** Entra → Protection → Conditional Access → find the policy
-   (Sign-in logs → the failed entry → **Conditional Access** tab names it) → exclude this
-   application id, or your account.
-
-Device-code sign-in is **not** a workaround — it fails the same device check, and many tenants block
-that flow outright as a phishing vector.
-
-## Streamable HTTP — hosted deployments
-
-```bash
-# from a clone
-GRAPH_MCP_PORT=8094 uv run --directory /path/to/ms-graph-mcp ms-graph-mcp-http
-curl -s localhost:8094/health
-```
-
-Per-request headers:
-
-| Header | Purpose |
-|---|---|
-| `Authorization: Bearer <token>` | **Required.** Either a Microsoft Graph access token (validated as a real Entra JWT), or the configured shared secret for a machine caller. |
-| `X-Write-Scope: true` | Expose *and* permit the write tools for this request. |
-| `X-Entra-App-Token: <token>` | Optional app-only token for directory/group lookups that delegated permissions can't cover tenant-wide. |
-| `X-Internal-Scope: true` | Expose the internal deterministic tier. Honoured **only** for the shared-secret machine principal — never for a user token. |
-| `X-OBO-Token: <token>` | Internal tier only: an explicitly supplied downstream token. |
-
-### Embed in your own app
-
-```python
-from ms_graph_mcp.app import build_app
-from ms_graph_mcp.config import GraphMcpConfig
-
-app = build_app(GraphMcpConfig(shared_secret="…"))  # a Starlette app — mount or serve it
-```
-
-`build_app(cfg, *, setup_telemetry=None, instrument_starlette=None)` takes optional OpenTelemetry
-hooks. The domain modules also work as plain async functions, without MCP:
-
-```python
-from ms_graph_mcp import calendar
-
-events = await calendar.calendar_list_upcoming_events(params, {"access_token": tok})
-```
-
-## Configuration
-
-All settings are read from the environment; a `.env` in the working directory is picked up.
-
-**Which settings you need depends entirely on how you run it.** The two deployment shapes use
-different authentication models, and mixing them up is the most common setup mistake.
-
-### Running locally (stdio) — you are the user
-
-The server signs *you* in. It is a **public client**, so there is **no client secret** — a program
-running on your own machine cannot keep one, since anyone with the config file or the process has
-it. MSAL uses PKCE instead.
-
-| Setting | Env | Default |
-|---|---|---|
-| Application (client) id | `GRAPH_MCP_CLIENT_ID` / `AZURE_AD_CLIENT_ID` | `""` |
-| Directory (tenant) id | `GRAPH_MCP_TENANT_ID` / `AZURE_AD_TENANT_ID` | `common` |
-| Delegated scopes to request at sign-in | `GRAPH_MCP_SCOPES` | read-only set |
-| Tool profiles to expose | `GRAPH_MCP_TOOLSETS` | `core` |
-| Expose the write tools | `GRAPH_MCP_WRITE_SCOPE` | `false` |
-| Caller identity, for tenant-scoping | `GRAPH_MCP_USER_EMAIL` | `""` |
-| Always use device code, never the browser | `GRAPH_MCP_FORCE_DEVICE_CODE` | `false` |
-| Where the token cache lives | `GRAPH_MCP_CACHE_DIR` | `~/.ms-graph-mcp` |
-| Pre-acquired token instead of signing in (CI) | `GRAPH_MCP_ACCESS_TOKEN` | `""` |
-
-> **`GRAPH_MCP_CLIENT_SECRET` is not used here and should not be set.** It belongs to the hosted
-> shape below. If you find yourself creating a client secret to run this locally, something has
-> gone wrong — the app registration only needs to be a public client with `http://localhost` as its
-> redirect URI.
-
-### Running hosted (Streamable HTTP) — the server acts for many users
-
-Callers present a token; the server validates it and may exchange it. This is where a client secret
-belongs, because the server is a confidential client running somewhere you control.
-
-| Setting | Env | Default |
-|---|---|---|
-| Verify JWT signatures against JWKS | `GRAPH_MCP_JWT_VERIFY` | `true` |
-| Shared secret for machine callers | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) |
-| Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `false` |
-| Client secret, for the OBO exchange | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
-| Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
-| Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `…/.default` |
-| HTTP port | `GRAPH_MCP_PORT` | `8094` |
-| Public URL, enabling OAuth discovery | `GRAPH_MCP_RESOURCE_URL` | `""` (discovery off) |
-| Additional accepted `Host` values | `GRAPH_MCP_ALLOWED_HOSTS` | `""` |
-
-`GRAPH_MCP_CLIENT_ID` and `GRAPH_MCP_TENANT_ID` are needed in both shapes.
-
-**`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity —
-with it off, token signatures are not verified. There is deliberately no setting that skips
-authentication altogether; see [ADR 0003](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/adr/0003-no-gateway-trust-mode.md).
-
-#### Set `GRAPH_MCP_RESOURCE_URL` when you deploy behind a proxy
-
-It does two things, and the second one will bite you if you skip it.
-
-It turns on **OAuth discovery**: the server publishes RFC 9728 metadata at
-`/.well-known/oauth-protected-resource/mcp` and answers an unauthenticated request with a `401`
-carrying `WWW-Authenticate: Bearer resource_metadata="…"`. A spec-compliant MCP client follows that
-pointer to find your tenant's authorization server on its own, rather than needing it configured by
-hand. Left empty, discovery is simply off — the server cannot know its own public URL from behind a
-proxy, and publishing a guess would send clients somewhere wrong.
-
-It also **registers your hostname with the transport's DNS-rebinding protection**. The MCP SDK
-validates the `Host` header and, by default, trusts only localhost. Since this process binds
-`0.0.0.0`, a deployment behind an ingress receives requests with a real hostname — and without this
-setting every one of them is refused with `421 Misdirected Request` before reaching any handler.
-Localhost stays valid regardless, so local runs and MCP Inspector are unaffected.
-
-```bash
-GRAPH_MCP_RESOURCE_URL=https://graph-mcp.example.com/mcp
-```
-
-Use `GRAPH_MCP_ALLOWED_HOSTS` (comma-separated) only for *additional* names that URL does not
-cover — a split-horizon DNS name, a service-mesh address, a second domain.
-
-> **Getting `421 Misdirected Request` on every request?** That is this, and it is the most likely
-> thing to go wrong on a first hosted deployment. Set `GRAPH_MCP_RESOURCE_URL` to the URL clients
-> actually connect to.
-
-#### Docker
-
-The image serves the **HTTP transport only**. stdio speaks JSON-RPC over the process's own
-stdin/stdout, so a client has to spawn it directly — wrapping that in `docker run` gains nothing and
-breaks the interactive sign-in.
-
-```bash
-docker run --rm -p 8094:8094 \
-  -e GRAPH_MCP_CLIENT_ID=<application-client-id> \
-  -e GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
-  -e GRAPH_MCP_RESOURCE_URL=https://graph-mcp.example.com/mcp \
-  ghcr.io/nitin27may/ms-graph-mcp:latest
-```
-
-Published to GHCR on each release for `linux/amd64` and `linux/arm64`, with build provenance
-attestations. Runs as a non-root user (uid 10001) that cannot write to its own virtualenv, and
-carries a `HEALTHCHECK` against `/health` — which is unauthenticated and does not touch Graph, so a
-healthy container means the process is serving, not that Entra is reachable.
-
-Sensible resource limits for a single replica; the process is I/O-bound on Graph, not CPU-bound:
-
-```yaml
-resources:
-  requests: { cpu: 50m,  memory: 128Mi }
-  limits:   { cpu: 500m, memory: 512Mi }
-```
-
-Build it yourself with `docker build -t ms-graph-mcp .`.
-
-**Dynamic client registration is not available.** Entra ID does not implement RFC 7591, so a client
-cannot register itself from the discovery metadata alone. Clients need a pre-registered app id —
-either yours, or their own with your API added as a permission. This is an Entra limitation, not
-something this server can work around.
-
-### Behaviour and safety
-
-| Setting | Env | Default |
-|---|---|---|
-| Remove the write tier entirely | `GRAPH_MCP_READ_ONLY` | `false` |
-| Recipient-domain allowlist for sending and forwarding mail | `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` | `""` (no gate) |
-| Max files per browse | `GRAPH_MCP_BROWSE_MAX_FILES` | `500` |
-| Log level (`INFO` shows every Graph call) | `GRAPH_MCP_LOG_LEVEL` | `WARNING` |
-| TLS verification off (corporate proxy) | `GRAPH_MCP_DISABLE_SSL_VERIFY` | `false` |
-
-`GRAPH_MCP_READ_ONLY` is stronger than leaving `GRAPH_MCP_WRITE_SCOPE` off: it removes the write
-tools from the deployment entirely, so no caller can reach them whatever they ask for. See
-[SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) for what to change before exposing this beyond localhost.
+| `GRAPH_MCP_READ_ONLY` | `true` to remove the write tier from the deployment entirely. |
+| `GRAPH_MCP_LOG_LEVEL` | `INFO` logs every Graph call to stderr. Defaults to `WARNING`. |
+
+**Every setting, both deployment shapes, and the hosted/OBO options** are in
+[docs/configuration.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/configuration.md).
+For running it as a service, see
+[docs/hosting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/hosting.md).
 
 ## Toolset profiles
 
@@ -575,10 +308,8 @@ Teams chat, Planner, OneNote, meeting transcripts or directory lookups, name tho
 
 Over HTTP a caller may send `X-Toolsets` to narrow further for one request. **It can only narrow.**
 The startup value is a ceiling, so a client asking for `all` gains nothing the deployment did not
-already enable.
-
-This filters *visibility*, not authority. A hidden tool is simply not listed; the write-scope and
-internal-tier gates are what actually stop a call, and they are unaffected.
+already enable. This filters *visibility*, not authority — the write-scope and internal-tier gates
+are what actually stop a call.
 
 ## Tool surface
 
@@ -586,77 +317,74 @@ Three tiers, one auth seam.
 
 | Tier | Count | Exposed when | Examples |
 |---|---:|---|---|
-| **Read** | 53 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `directory_list_user_groups` |
-| **Write** | 23 | `X-Write-Scope: true` | `mail_send`, `files_upload`, `files_create_sharing_link`, `notes_create_page`, `tasks_create_todo` |
+| **Read** | 53 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `search_query` |
+| **Write** | 23 | `X-Write-Scope: true` | `mail_send`, `calendar_create_event`, `files_create_sharing_link`, `tasks_complete_todo` |
 | **Internal** | 9 | `X-Internal-Scope: true`, machine principal only | `graph_request` passthrough, drive walk/upload, message attachments, app-only `probe_graph_access` |
+
+The internal tier is not part of the agent surface. A model sees **76 agent-visible** tools.
+By namespace: mail 11 · tasks 11 · calendar 10 · files 10 · chat 8 · directory 7 · meetings 7 ·
+people 6 · notes 5 · search 1.
 
 Tool names are namespaced by Graph permission family rather than by Microsoft product, because real
 questions cross product boundaries — `files_` covers OneDrive *and* SharePoint document libraries,
 which are the same `driveItem` resource underneath.
 
-By namespace: mail 11 · tasks 11 · calendar 10 · files 10 · chat 8 · directory 7 · meetings 7 ·
-people 6 · notes 5 · search 1.
-
 Every tool declares MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients
 know what needs confirming, and every description names the delegated permission it requires.
 
-> **Renamed in 0.2.0.** Every pre-0.2.0 tool name still works as an alias and will keep working
-> until 0.3.0. Aliases are accepted by `tools/call` but are not advertised in `tools/list`.
-
-The lists live in `ms_graph_mcp.allowlists` and are resolved against the tool registry on every
-`tools/list`. A name in an allowlist with no registered tool raises rather than being skipped — the
-server refuses to serve a partial surface instead of silently dropping a tool.
+> **Renamed in 0.2.0.** Every pre-0.2.0 tool name still works as an alias, and will keep working
+> until 0.4.0. Aliases are honoured by `tools/call` but never advertised in `tools/list`, so they
+> cost no context.
 
 ## Documentation
 
 | | |
 |---|---|
-| [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) | Dev setup, the add-a-tool checklist, and the invariants that are enforced by tests |
-| [SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) | Reporting vulnerabilities, and the settings to change before exposing this beyond localhost |
+| [docs/](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/README.md) | Index of everything below |
+| [docs/configuration.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/configuration.md) | Every environment variable, split by deployment shape |
+| [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
+| [docs/hosting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/hosting.md) | Streamable HTTP, headers, Docker and GHCR |
+| [docs/troubleshooting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/troubleshooting.md) | Entra errors, Conditional Access, corporate TLS proxies |
+| [docs/debugging.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
+| [docs/graph-coverage.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/graph-coverage.md) | What this covers of the Graph v1.0 surface, what it does not, and what is out of scope |
+| [docs/roadmap.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/roadmap.md) | What is not done yet |
+| [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md) | Running the suite, how it is arranged, and MCP Inspector |
+| [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) | Dev setup, the add-a-tool checklist, and the invariants enforced by tests |
+| [SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) | Reporting vulnerabilities, and what to change before exposing this beyond localhost |
 | [CHANGELOG.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CHANGELOG.md) | Release history |
 | [CLAUDE.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
-| [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
-| [docs/graph-coverage.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/graph-coverage.md) | What this server covers of the Graph v1.0 surface, what it does not, and what is out of scope |
-| [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md) | Running the suite, how it is arranged, and driving the server with MCP Inspector |
-| [docs/debugging.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
-| [docs/adr/](https://github.com/nitin27may/ms-graph-mcp/tree/main/docs/adr/) | Architecture Decision Records |
 
-## Development
+## What's next
 
-```bash
-uv sync
-uv run pytest -q            # full suite
-uv run ruff check .
-uv run ruff format .
-```
+SharePoint sites and lists are the largest gap; directory completion, file move/delete, and mail
+drafts follow. Sovereign clouds (GCC High / 21Vianet) are unsupported today. The full list, and what
+is deliberately out of scope, is in
+[docs/roadmap.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/roadmap.md).
 
-See [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) before opening a pull request — the tool allowlists and the
-tier separation have invariants that are enforced rather than advisory.
+## Getting help
 
-## Roadmap
+- **Setup and app-registration questions** →
+  [Discussions](https://github.com/nitin27may/ms-graph-mcp/discussions)
+- **Bugs** → [Issues](https://github.com/nitin27may/ms-graph-mcp/issues), with the output of running
+  the server in a terminal
+- **Security vulnerabilities** → never a public issue; see
+  [SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md)
 
-Tracked in more detail in the issues. The near-term programme:
-
-- [x] **MCP SDK 2.x** — done. Speaks the 2026-07-28 protocol revision while still serving 2025-era
-      clients. Note that 2.x moves the SDK's HTTP stack to `httpx2`, a distribution separate from the
-      `httpx` this server's Graph client uses; consolidating the two is tracked separately.
-- [ ] **OAuth resource server** — RFC 9728 Protected Resource Metadata, `WWW-Authenticate`
-      challenges, and RFC 8707 audience binding, so any spec-compliant MCP client can authenticate
-      without client-specific configuration.
-- [ ] **Toolset profiles** — expose a subset of the 55 tools per client, to cut the tool-definition
-      tokens an agent pays before it does any work.
-- [ ] **Graph coverage** — SharePoint sites and lists, unified `/search/query`, calendar write, and
-      1:1 chats are the notable gaps.
-- [ ] Full documentation: app-registration setup, the delegated-permission matrix per tool, and
-      end-to-end configuration for VS Code, Claude Code, Claude Desktop and MCP Inspector.
-- [ ] Sovereign cloud support (GCC High / 21Vianet) — a few Graph and login endpoints are still
-      hardcoded to the commercial cloud.
-- [ ] Publish to PyPI, and a container image on GHCR.
+Never paste an access token, client secret or shared secret into any of them.
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md); participation is
-governed by the [Code of Conduct](https://github.com/nitin27may/ms-graph-mcp/blob/main/CODE_OF_CONDUCT.md).
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md);
+participation is governed by the
+[Code of Conduct](https://github.com/nitin27may/ms-graph-mcp/blob/main/CODE_OF_CONDUCT.md).
+
+```bash
+uv sync
+uv run pytest -q            # full suite, offline, about two seconds
+uv run ruff check .
+uv run ruff format .
+```
 
 ## License
 

@@ -1,6 +1,6 @@
 # Testing
 
-855 tests, all offline. No Graph call is ever made, no network is touched, and the whole suite runs
+875 tests, all offline. No Graph call is ever made, no network is touched, and the whole suite runs
 in under two seconds — so there is no reason to skip it before pushing.
 
 ```bash
@@ -31,6 +31,7 @@ wheel fails the PR rather than a user's first install.
 | Protocol | `test_protocol_conformance.py` (16) | The wire format, via a real client session |
 | Auth | `tests/entra/` (56) | Token validation against a real RS256 keypair |
 | Transport | `test_app.py`, `test_auth.py`, `test_oauth_discovery.py` | Middleware, discovery, host policy |
+| Documentation | `test_permissions_doc.py`, `test_doc_counts.py` | The permission matrix and every tool count quoted in prose, against the code |
 | Domains | `test_meetings.py`, `test_calendar_write.py`, … | Per-tool behaviour against mocked Graph responses |
 
 Two pytest settings shape how tests are written:
@@ -43,7 +44,7 @@ Two pytest settings shape how tests are written:
 
 ### `test_tools_contract.py` — drift, on every tool at once
 
-A 90-tool surface only stays coherent if drift breaks the build. This file parametrizes over the
+An 85-tool surface only stays coherent if drift breaks the build. This file parametrizes over the
 whole registry, so a new tool is held to the same standard as the first one without anybody
 remembering to add a test. It enforces that every tool declares annotations, that descriptions are
 200–400 characters and differentiate the tool from its neighbours, and that failures come from
@@ -102,14 +103,16 @@ These cost real time when hit cold.
 
 ## Adding a tool
 
-Four steps, in `CLAUDE.md` in full. Skipping either of the last two breaks the build:
+Five steps, in `CLAUDE.md` in full. Skipping any of the last three breaks the build:
 
 1. Pydantic input model + an **async** function with `@tool(description=...)`.
 2. Add the name to exactly one tuple in `allowlists.py`. A tool in no allowlist is unreachable; an
    allowlist name with no tool raises `RuntimeError` on the next `tools/list`.
 3. Bump the hardcoded count in `tests/test_allowlists.py` — so adding a tool is a deliberate edit.
-4. `uv run python scripts/generate_permissions.py` to regenerate `docs/permissions.md`. CI checks
-   this with `--check`.
+4. `uv run python scripts/generate_permissions.py` to regenerate `docs/permissions.md`.
+5. `uv run python scripts/check_docs.py` to update the tool counts quoted in prose.
+
+CI checks both scripts with `--check`, so a stale document fails the PR.
 
 ## MCP Inspector
 

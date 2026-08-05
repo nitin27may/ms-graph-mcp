@@ -2,7 +2,7 @@
 
 Guidance for Claude Code working in this repository.
 
-`ms-graph-mcp` is a Model Context Protocol server for Microsoft Graph — 60 tools across calendar,
+`ms-graph-mcp` is a Model Context Protocol server for Microsoft Graph — 85 tools across calendar,
 email, meetings, Teams chat, files, people, directory, tasks and OneNote, served over stdio or
 Streamable HTTP. Tool names are namespaced by Graph permission family (`mail_`, `files_`,
 `calendar_`, `meetings_`, `chat_`, `directory_`, `people_`, `tasks_`, `notes_`). The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
@@ -82,7 +82,7 @@ and the tools.
 
 ## Adding a tool
 
-Four steps. Skipping step 3 or 4 breaks the server or the suite.
+Five steps. Skipping 3, 4 or 5 breaks the server or the suite.
 
 1. In the domain module, define a Pydantic input model and an **async** function decorated with
    `@tool(description=...)`. A sync function raises `TypeError` at decoration time
@@ -97,6 +97,16 @@ Four steps. Skipping step 3 or 4 breaks the server or the suite.
    serve a partial surface rather than silently dropping a tool.
 4. Bump the hardcoded count in `tests/test_allowlists.py`. That assertion exists so adding or
    removing a tool is a deliberate edit rather than an accident.
+5. Regenerate the docs that are derived from the code. Both are checked in CI, so a stale copy
+   fails the PR rather than reaching a reader:
+
+   ```bash
+   uv run python scripts/generate_permissions.py   # docs/permissions.md, from the descriptions
+   uv run python scripts/check_docs.py             # tool counts quoted in prose
+   ```
+
+   `check_docs.py` also fails when a pattern matches *nothing* — rewording a sentence it anchors on
+   would otherwise leave the number silently unchecked.
 
 Any caller-supplied value interpolated into a Graph path or an OData `$filter` must go through
 `src/ms_graph_mcp/odata.py` — `validate_graph_id`, `validate_mail_folder`, `validate_task_status`,
@@ -104,7 +114,7 @@ Any caller-supplied value interpolated into a Graph path or an OData `$filter` m
 
 ### Tool quality rules — enforced by `tests/test_tools_contract.py`
 
-These are tests, not preferences. A 90-tool surface only stays coherent if drift breaks the build.
+These are tests, not preferences. An 85-tool surface only stays coherent if drift breaks the build.
 
 - **Every tool declares annotations.** Pass one of the five presets from `tooling.py`:
   `READ_ONLY`, `WRITE_CREATE`, `WRITE_UPDATE`, `WRITE_SEND`, `WRITE_DESTRUCTIVE`. A tool that
@@ -129,8 +139,8 @@ These are tests, not preferences. A 90-tool surface only stays coherent if drift
 
 | Tier | Count | Exposed when |
 |---|---:|---|
-| Read | 43 | always |
-| Write | 8 | `X-Write-Scope: true`, and only when `GRAPH_MCP_READ_ONLY` is off |
+| Read | 53 | always |
+| Write | 23 | `X-Write-Scope: true`, and only when `GRAPH_MCP_READ_ONLY` is off |
 | Internal | 9 | shared-secret machine principal **and** `X-Internal-Scope: true` |
 
 Security invariants — do not relax these to make something work:
@@ -143,8 +153,9 @@ Security invariants — do not relax these to make something work:
   with defense in depth at `entra/middleware.py:118`.
 - Dispatch fails closed. Unknown name, missing scope, and missing Graph token each return a
   structured `{"error": ..., "message": ...}` before any Graph call (`server.py:122-189`).
-- `mail_send` / `mail_propose` check `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` before the Graph call,
-  not after.
+- `mail_send` / `mail_forward` check `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` before the Graph call,
+  not after (`email.py:319`, `email.py:664`). Those two are gated because the caller picks the
+  recipients; `mail_reply` / `mail_reply_all` are not, because the thread already fixes them.
 - **`GRAPH_MCP_READ_ONLY` is enforced at dispatch, not just in `tools/list`.** Hiding a tool is a
   context-efficiency measure; a caller can name any tool it likes. See ADR 0003 for why there is no
   setting that skips authentication.
