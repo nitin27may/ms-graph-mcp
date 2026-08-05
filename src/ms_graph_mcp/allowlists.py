@@ -28,6 +28,11 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "propose_email",
     "save_to_onenote",
     "create_todo_task",
+    # files
+    "upload_file",
+    "update_file_content",
+    "create_folder",
+    "create_sharing_link",
 )
 
 WRITE_TOOL_NAME_SET: frozenset[str] = frozenset(WRITE_TOOL_NAMES)
@@ -40,6 +45,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "get_meeting_attendees",
     "get_calendar_events_range",
     # email
+    "list_email_attachments",
     "search_emails",
     "get_recent_emails",
     "get_flagged_emails",

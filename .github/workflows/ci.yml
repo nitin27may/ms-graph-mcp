@@ -94,13 +94,15 @@ jobs:
           from ms_graph_mcp.allowlists import (
               resolve_read_tools, resolve_write_tools, resolve_internal_tools,
           )
+          # Resolution is the assertion: every allowlisted name must map to a
+          # tool registered by the installed wheel, or these raise. Exact counts
+          # are deliberately NOT duplicated here — tests/test_allowlists.py owns
+          # that guard, and a second copy just means every tranche edits CI too.
           read, write, internal = (
               resolve_read_tools(), resolve_write_tools(), resolve_internal_tools(),
           )
           print(f"read={len(read)} write={len(write)} internal={len(internal)}")
-          assert len(read) == 42, f"expected 42 read tools, got {len(read)}"
-          assert len(write) == 4, f"expected 4 write tools, got {len(write)}"
-          assert len(internal) == 9, f"expected 9 internal tools, got {len(internal)}"
+          assert read and write and internal, "a tier resolved empty from the wheel"
           PY
 
       - name: Verify console scripts are installed

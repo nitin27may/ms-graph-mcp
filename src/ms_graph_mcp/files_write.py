@@ -28,9 +28,12 @@ from typing import Any
 
 import httpx
 from opentelemetry import trace
+from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_post
 from ms_graph_mcp.config import get_config
+from ms_graph_mcp.odata import validate_graph_id
+from ms_graph_mcp.tooling import tool
 
 logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer("ms_graph_mcp")
@@ -345,3 +348,198 @@ async def update_drive_item_content(
                     status_code=resp.status_code,
                 )
             return _slim_drive_item(resp.json())
+
+
+# ── Agent-facing tools ────────────────────────────────────────────────────────
+# The helpers above have been driven by the internal tier since this package was
+# extracted. These wrappers put a curated subset on the agent surface, in the
+# write tier. The argument shapes deliberately differ from the internal tools:
+# an LLM can reason about "Reports/Q3" and "summary.md", not about an opaque
+# driveId/itemId pair it has to have fetched first.
+
+
+class UploadFileInput(BaseModel):
+    """Create a new file in the signed-in user's OneDrive."""
+
+    folder_path: str = Field(
+        default="",
+        description="Folder path relative to the drive root, e.g. 'Reports/Q3'. Empty means the root.",
+    )
+    filename: str = Field(description="File name including extension, e.g. 'summary.md'")
+    content: str = Field(description="Text content of the file (UTF-8)")
+    mime_type: str = Field(
+        default="text/plain",
+        description="MIME type, e.g. text/plain, text/markdown, text/csv, text/html",
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="True replaces an existing file of the same name; False keeps both by renaming.",
+    )
+
+
+class UpdateFileContentInput(BaseModel):
+    """Replace the contents of an existing OneDrive file, keeping its id and URL."""
+
+    item_id: str = Field(description="The driveItem id of the file to overwrite")
+    content: str = Field(description="New text content of the file (UTF-8)")
+    mime_type: str = Field(default="text/plain", description="MIME type of the new content")
+    drive_id: str = Field(
+        default="",
+        description="Drive id. Leave empty for the signed-in user's own OneDrive.",
+    )
+    etag: str = Field(
+        default="",
+        description=(
+            "Optional etag from a previous read. When supplied the update is refused if the "
+            "file changed in the meantime, instead of silently overwriting someone else's edit."
+        ),
+    )
+
+
+class CreateFolderInput(BaseModel):
+    """Create a folder path in the signed-in user's OneDrive, including parents."""
+
+    folder_path: str = Field(
+        description="Folder path relative to the drive root, e.g. 'Reports/Q3'"
+    )
+
+
+class CreateSharingLinkInput(BaseModel):
+    """Create a shareable link to a OneDrive or SharePoint file."""
+
+    item_id: str = Field(description="The driveItem id to share")
+    link_type: str = Field(
+        default="view",
+        description="'view' for read-only, 'edit' for read-write",
+    )
+    scope: str = Field(
+        default="organization",
+        description=(
+            "'organization' for anyone signed in to the tenant, 'anonymous' for anyone with the "
+            "link. Prefer 'organization' — 'anonymous' may be blocked by tenant policy."
+        ),
+    )
+    drive_id: str = Field(
+        default="", description="Drive id. Leave empty for the signed-in user's own OneDrive."
+    )
+
+
+@tool(
+    description=(
+        "Create a new text file in the user's OneDrive and return its id, name and web URL. "
+        "Use for saving notes, summaries, markdown or CSV. Text only — binary uploads are not "
+        "supported here."
+    )
+)
+async def upload_file(params: UploadFileInput, context: dict) -> dict:
+    token = context["access_token"]
+    try:
+        return await upload_file_to_drive(
+            token,
+            params.folder_path,
+            sanitize_filename(params.filename),
+            params.content.encode("utf-8"),
+            params.mime_type,
+            conflict_behavior="replace" if params.overwrite else "rename",
+        )
+    except OneDriveError as exc:
+        return {"error": "upload_failed", "message": str(exc)}
+
+
+@tool(
+    description=(
+        "Replace the contents of an existing OneDrive file, keeping the same id, URL and "
+        "sharing permissions. Pass the etag from a previous read to avoid clobbering an edit "
+        "someone else made in the meantime."
+    )
+)
+async def update_file_content(params: UpdateFileContentInput, context: dict) -> dict:
+    token = context["access_token"]
+    drive_id = params.drive_id
+    if not drive_id:
+        # update_drive_item_content addresses /drives/{id} explicitly, so resolve
+        # the caller's own drive rather than making the model supply an id it has
+        # no way to know.
+        drive = await graph_get(token, "/me/drive", **{"$select": "id"})
+        drive_id = drive.get("id", "")
+        if not drive_id:
+            return {"error": "drive_not_found", "message": "Could not resolve the user's OneDrive."}
+    try:
+        return await update_drive_item_content(
+            token,
+            drive_id,
+            params.item_id,
+            params.content.encode("utf-8"),
+            params.mime_type,
+            etag=params.etag or None,
+        )
+    except OneDriveConflictError as exc:
+        return {
+            "error": "file_changed",
+            "message": (
+                f"{exc} The file was modified since the etag you supplied. Re-read it, merge, "
+                "and retry — or omit the etag to overwrite deliberately."
+            ),
+        }
+    except OneDriveError as exc:
+        return {"error": "update_failed", "message": str(exc)}
+
+
+@tool(
+    description=(
+        "Create a folder in the user's OneDrive, creating any missing parent folders. "
+        "Returns the folder id and web URL. Succeeds quietly if it already exists."
+    )
+)
+async def create_folder(params: CreateFolderInput, context: dict) -> dict:
+    token = context["access_token"]
+    try:
+        return await ensure_folder_exists(token, params.folder_path)
+    except OneDriveError as exc:
+        return {"error": "create_folder_failed", "message": str(exc)}
+
+
+@tool(
+    description=(
+        "Create a shareable link to a file and return the URL. Defaults to a read-only link "
+        "scoped to the organisation."
+    )
+)
+async def create_sharing_link(params: CreateSharingLinkInput, context: dict) -> dict:
+    token = context["access_token"]
+    if params.link_type not in {"view", "edit"}:
+        return {
+            "error": "invalid_arguments",
+            "message": f"link_type must be 'view' or 'edit', got {params.link_type!r}",
+        }
+    if params.scope not in {"organization", "anonymous"}:
+        return {
+            "error": "invalid_arguments",
+            "message": f"scope must be 'organization' or 'anonymous', got {params.scope!r}",
+        }
+    item_id = validate_graph_id(params.item_id, "item_id")
+    base = _drive_base(validate_graph_id(params.drive_id, "drive_id") if params.drive_id else None)
+    try:
+        data = await graph_post(
+            token,
+            f"{base}/items/{item_id}/createLink",
+            {"type": params.link_type, "scope": params.scope},
+        )
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        if status == 403:
+            return {
+                "error": "sharing_forbidden",
+                "message": (
+                    "Tenant policy refused this sharing link. Anonymous links are commonly "
+                    "disabled — try scope='organization'."
+                ),
+            }
+        return {"error": "create_link_failed", "message": f"Graph returned HTTP {status}"}
+    link = data.get("link") or {}
+    return {
+        "url": link.get("webUrl", ""),
+        "type": link.get("type", params.link_type),
+        "scope": link.get("scope", params.scope),
+        "item_id": item_id,
+    }

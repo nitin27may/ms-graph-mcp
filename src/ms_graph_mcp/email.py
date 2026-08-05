@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_post_no_content
 from ms_graph_mcp.config import get_config
-from ms_graph_mcp.odata import escape_odata_string, validate_mail_folder
+from ms_graph_mcp.odata import escape_odata_string, validate_graph_id, validate_mail_folder
 from ms_graph_mcp.tooling import tool
 
 _SELECT = "id,subject,from,toRecipients,receivedDateTime,bodyPreview,importance,flag,conversationId,webLink"
@@ -492,3 +492,42 @@ def _full_msg(m: dict) -> dict:
     body = m.get("body") or {}
     base["body_text"] = body.get("content", "")[:3000]  # cap at 3k chars
     return base
+
+
+class ListEmailAttachmentsInput(BaseModel):
+    message_id: str = Field(description="The message id to list attachments for")
+
+
+@tool(
+    description=(
+        "List the file attachments on an email — name, type and size. Returns metadata only, "
+        "not file contents, so it is safe to call on messages with large attachments. "
+        "Inline images such as signature logos are excluded."
+    )
+)
+async def list_email_attachments(params: ListEmailAttachmentsInput, context: dict) -> list[dict]:
+    """Attachment metadata for the agent surface.
+
+    Deliberately not the internal ``fetch_message_attachments``, which downloads
+    every attachment and base64-encodes it. Handing an LLM a base64 blob is
+    both useless to it and enormously expensive in tokens — a model asking
+    "what's attached?" wants filenames. Downloading stays in the internal tier
+    for the ETL callers that actually parse the bytes.
+    """
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    data = await graph_get(
+        token,
+        f"/me/messages/{message_id}/attachments",
+        **{"$select": "id,name,contentType,size,isInline"},
+    )
+    return [
+        {
+            "id": a.get("id", ""),
+            "name": a.get("name", ""),
+            "content_type": a.get("contentType", ""),
+            "size_bytes": a.get("size", 0),
+        }
+        for a in (data.get("value") or [])
+        if not a.get("isInline")
+    ]
