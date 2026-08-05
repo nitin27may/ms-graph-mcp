@@ -133,7 +133,7 @@ async def test_unknown_tool_returns_a_tool_execution_error(graph_client_context)
 async def test_write_tool_is_refused_over_the_protocol_without_scope(graph_client_context):
     graph_client_context(write_scope=False)
     async with mcp.Client(build_graph_mcp_server()) as client:
-        result = await client.call_tool("send_email", {"to": "x@example.com"})
+        result = await client.call_tool("mail_send", {"to": "x@example.com"})
     assert result.is_error is True
     assert json.loads(result.content[0].text)["error"] == "write_scope_required"
 
@@ -183,9 +183,6 @@ def test_tool_spec_annotations_project_onto_the_wire_type():
     assert bare.annotations is None
 
 
-# Phase B backfills annotations onto the existing tools. strict=True means this
-# starts failing as an XPASS the moment that lands, forcing the marker's removal.
-@pytest.mark.xfail(strict=True, reason="Phase B backfill pending")
 async def test_annotations_reach_a_real_client(graph_client_context):
     """Every advertised tool should carry hints a client can act on."""
     graph_client_context(write_scope=True)

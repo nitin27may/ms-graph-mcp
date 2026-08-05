@@ -274,13 +274,13 @@ async def test_update_drive_item_content_decodes_base64(monkeypatch):
     assert fake.await_args.args[3] == raw  # decoded bytes
 
 
-# ── get_group_drive (agent-tier) + graph_get_group_drive (internal-tier) ─────
+# ── files_get_group_drive (agent-tier) + graph_get_group_drive (internal-tier) ─────
 
 
 def test_get_group_drive_in_read_allowlist():
-    assert "get_group_drive" in READ_TOOL_NAME_SET
-    assert "get_group_drive" not in INTERNAL_TOOL_NAME_SET
-    assert "get_group_drive" not in WRITE_TOOL_NAME_SET
+    assert "files_get_group_drive" in READ_TOOL_NAME_SET
+    assert "files_get_group_drive" not in INTERNAL_TOOL_NAME_SET
+    assert "files_get_group_drive" not in WRITE_TOOL_NAME_SET
 
 
 def test_graph_get_group_drive_in_internal_allowlist_only():
@@ -290,7 +290,7 @@ def test_graph_get_group_drive_in_internal_allowlist_only():
 
 
 async def test_get_group_drive_calls_graph_and_returns_drive(monkeypatch):
-    from ms_graph_mcp.files import GetGroupDriveInput, get_group_drive
+    from ms_graph_mcp.files import GetGroupDriveInput, files_get_group_drive
 
     fake_get = AsyncMock(
         return_value={
@@ -301,7 +301,9 @@ async def test_get_group_drive_calls_graph_and_returns_drive(monkeypatch):
         }
     )
     monkeypatch.setattr("ms_graph_mcp.files.graph_get", fake_get)
-    out = await get_group_drive(GetGroupDriveInput(group_id="group-123"), {"access_token": "tok"})
+    out = await files_get_group_drive(
+        GetGroupDriveInput(group_id="group-123"), {"access_token": "tok"}
+    )
     assert out["drive_id"] == "drive-abc"
     assert out["name"] == "Documents"
     assert out["web_url"].startswith("https://")

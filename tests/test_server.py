@@ -38,12 +38,12 @@ async def test_dispatch_rejects_unknown_tool(call_tool):
 
 
 async def test_dispatch_rejects_write_tool_without_scope(call_tool):
-    # send_email is a write tool; without write_scope in context it is refused.
+    # mail_send is a write tool; without write_scope in context it is refused.
     cv = current_request_context.set(
         {"access_token": "tok", "user_email": "u@test.com", "write_scope": False}
     )
     try:
-        result = await call_tool("send_email", {"to": "x@example.com"})
+        result = await call_tool("mail_send", {"to": "x@example.com"})
     finally:
         current_request_context.reset(cv)
     assert result.is_error is True

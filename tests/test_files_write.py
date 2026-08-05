@@ -73,12 +73,32 @@ def _patch_async_client(resp):
     return MagicMock(return_value=client), client
 
 
+def _put_result(status: int):
+    """A GraphResult as graph_put_raw would return it."""
+    from ms_graph_mcp.client import GraphResult
+
+    payload = (
+        {
+            "id": "item-1",
+            "name": "report.pdf",
+            "webUrl": "https://contoso-my.sharepoint.com/report.pdf",
+            "size": 5,
+            "eTag": '"abc"',
+            "lastModifiedDateTime": "2026-04-30T10:00:00Z",
+            "parentReference": {"driveId": "drive-1"},
+        }
+        if 200 <= status < 300
+        else None
+    )
+    return GraphResult(status_code=status, ok=200 <= status < 300, text="", _payload=payload)
+
+
 def test_upload_simple_put_success():
+    """Simple upload now goes through client.py:graph_put_raw, not raw httpx."""
     from ms_graph_mcp.files_write import upload_file_to_drive
 
-    factory, client = _patch_async_client(_mock_put_response(201))
-
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", new=AsyncMock()) as put:
+        put.return_value = _put_result(201)
         result = asyncio.run(
             upload_file_to_drive(
                 "tok",
@@ -89,17 +109,15 @@ def test_upload_simple_put_success():
             )
         )
 
-    # URL must encode each path segment, end with :/content, and carry the
-    # rename conflict-behavior query param so an existing filename gets a
-    # ``-1`` suffix instead of a 409.
-    url = client.put.await_args.args[0]
-    assert "/me/drive/root:/WorkGraph/Documents/report.pdf:/content" in url
-    assert "@microsoft.graph.conflictBehavior=rename" in url
-
-    # Headers carry the bearer token + correct mime.
-    headers = client.put.await_args.kwargs["headers"]
-    assert headers["Authorization"] == "Bearer tok"
-    assert headers["Content-Type"] == "application/pdf"
+    token, path, content, mime = put.await_args.args
+    # The path must encode each segment, end with :/content, and carry the
+    # rename conflict-behavior so an existing filename gets a "-1" suffix
+    # rather than a 409.
+    assert token == "tok"
+    assert "/me/drive/root:/WorkGraph/Documents/report.pdf:/content" in path
+    assert "@microsoft.graph.conflictBehavior=rename" in path
+    assert content == b"hello"
+    assert mime == "application/pdf"
 
     # Returns the slimmed driveItem with the eTag preserved.
     assert result["id"] == "item-1"
@@ -110,9 +128,8 @@ def test_upload_simple_put_success():
 def test_upload_simple_put_failure_raises_typed_error():
     from ms_graph_mcp.files_write import OneDriveError, upload_file_to_drive
 
-    factory, _ = _patch_async_client(_mock_put_response(403))
-
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", new=AsyncMock()) as put:
+        put.return_value = _put_result(403)
         with pytest.raises(OneDriveError) as exc_info:
             asyncio.run(
                 upload_file_to_drive(
@@ -182,9 +199,9 @@ def test_upload_large_file_uses_upload_session():
 def test_update_in_place_includes_if_match():
     from ms_graph_mcp.files_write import update_drive_item_content
 
-    factory, client = _patch_async_client(_mock_put_response(200))
+    put_mock = AsyncMock(return_value=_put_result(200))
 
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", put_mock):
         asyncio.run(
             update_drive_item_content(
                 "tok",
@@ -196,8 +213,8 @@ def test_update_in_place_includes_if_match():
             )
         )
 
-    url = client.put.await_args.args[0]
-    headers = client.put.await_args.kwargs["headers"]
+    url = put_mock.await_args.args[1]
+    headers = put_mock.await_args.kwargs["extra_headers"] or {}
     assert "/drives/drive-1/items/item-1/content" in url
     assert headers["If-Match"] == '"old"'
 
@@ -208,9 +225,9 @@ def test_update_412_raises_conflict_error():
         update_drive_item_content,
     )
 
-    factory, _ = _patch_async_client(_mock_put_response(412))
+    put_mock = AsyncMock(return_value=_put_result(412))
 
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", put_mock):
         with pytest.raises(OneDriveConflictError):
             asyncio.run(
                 update_drive_item_content(
@@ -230,9 +247,9 @@ def test_update_other_4xx_raises_generic_error():
         update_drive_item_content,
     )
 
-    factory, _ = _patch_async_client(_mock_put_response(403))
+    put_mock = AsyncMock(return_value=_put_result(403))
 
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", put_mock):
         with pytest.raises(OneDriveError) as exc_info:
             asyncio.run(
                 update_drive_item_content("tok", "drive-1", "item-1", b"x", "text/markdown")
@@ -313,12 +330,15 @@ def test_ensure_folder_409_falls_back_to_lookup():
 
 def test_upload_with_drive_id_uses_drives_base_url():
     """drive_id present → URL uses /drives/{id}/… instead of /me/drive/…"""
+    from ms_graph_mcp.client import GraphResult
     from ms_graph_mcp.files_write import upload_file_to_drive
 
-    factory, client = _patch_async_client(
-        _mock_put_response(
-            201,
-            body={
+    put_mock = AsyncMock(
+        return_value=GraphResult(
+            status_code=201,
+            ok=True,
+            text="",
+            _payload={
                 "id": "sp-item-1",
                 "name": "doc.md",
                 "webUrl": "https://contoso.sharepoint.com/doc.md",
@@ -329,7 +349,7 @@ def test_upload_with_drive_id_uses_drives_base_url():
         )
     )
 
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", put_mock):
         result = asyncio.run(
             upload_file_to_drive(
                 "tok",
@@ -343,7 +363,7 @@ def test_upload_with_drive_id_uses_drives_base_url():
 
     import urllib.parse
 
-    url = urllib.parse.unquote(client.put.await_args.args[0])
+    url = urllib.parse.unquote(put_mock.await_args.args[1])
     assert "/drives/sp-drive-abc/root:/Shared Documents/Plans/doc.md:/content" in url
     assert "/me/drive" not in url
     assert result["drive_id"] == "sp-drive-abc"
@@ -353,9 +373,9 @@ def test_upload_without_drive_id_uses_me_drive():
     """drive_id absent → URL keeps the original /me/drive/… base."""
     from ms_graph_mcp.files_write import upload_file_to_drive
 
-    factory, client = _patch_async_client(_mock_put_response(201))
+    put_mock = AsyncMock(return_value=_put_result(201))
 
-    with patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory):
+    with patch("ms_graph_mcp.files_write.graph_put_raw", put_mock):
         asyncio.run(
             upload_file_to_drive(
                 "tok",
@@ -366,7 +386,7 @@ def test_upload_without_drive_id_uses_me_drive():
             )
         )
 
-    url = client.put.await_args.args[0]
+    url = put_mock.await_args.args[1]
     assert "/me/drive/root:/WorkGraph/Docs/doc.pdf:/content" in url
     assert "/drives/" not in url
 

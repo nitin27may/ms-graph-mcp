@@ -43,6 +43,9 @@ def _make_response(status: int, body: dict | str) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status
     resp.is_success = 200 <= status < 300
+    # A real httpx.Response always carries headers; graph_try_get reads
+    # content-type off them to decide how to hand the body back.
+    resp.headers = {"content-type": "application/json"}
     if isinstance(body, dict):
         resp.json.return_value = body
         resp.text = json.dumps(body)
@@ -371,6 +374,8 @@ class TestGetTranscriptByEventId:
         content_resp = MagicMock(spec=httpx.Response)
         content_resp.status_code = 200
         content_resp.text = vtt_content
+        content_resp.is_success = True
+        content_resp.headers = {"content-type": "text/vtt"}
 
         async def fake_get(url, **kwargs):
             url_str = str(url)
@@ -427,6 +432,8 @@ class TestGetTranscriptByEventId:
                     content = MagicMock(spec=httpx.Response)
                     content.status_code = 200
                     content.text = vtt
+                    content.is_success = True
+                    content.headers = {"content-type": "text/vtt"}
                     return content
                 if "transcripts" in url_str:
                     return _make_response(200, transcript_list_data)

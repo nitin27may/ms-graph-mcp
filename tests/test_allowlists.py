@@ -70,7 +70,7 @@ def test_assert_no_write_in_reads_detects_a_leak(monkeypatch):
     monkeypatch.setattr(
         tools_mod,
         "READ_TOOL_NAME_SET",
-        tools_mod.READ_TOOL_NAME_SET | {"send_email"},
+        tools_mod.READ_TOOL_NAME_SET | {"mail_send"},
     )
     with pytest.raises(RuntimeError, match="write tools"):
         tools_mod.assert_no_write_in_reads()

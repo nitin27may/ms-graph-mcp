@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from ms_graph_mcp.client import graph_get, graph_post_no_content
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.odata import escape_odata_string, validate_graph_id, validate_mail_folder
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, WRITE_CREATE, WRITE_SEND, tool
 
 _SELECT = "id,subject,from,toRecipients,receivedDateTime,bodyPreview,importance,flag,conversationId,webLink"
 _SELECT_FULL = _SELECT + ",body"
@@ -38,9 +38,17 @@ class GetEmailThreadInput(BaseModel):
 
 
 @tool(
-    description="Search the user's emails by keywords, subject, or sender name. Returns subject, sender, date, and snippet."
+    description=(
+        "Search the signed-in user's mailbox by keyword, subject or sender name. Returns id, "
+        "subject, sender, date and a preview snippet, newest first. Searchable folders are "
+        "inbox, sentitems, drafts, or all. Use mail_list_recent when the ask is time-based "
+        "rather than keyword-based, and mail_get_thread to read a whole conversation. "
+        "Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_emails",),
 )
-async def search_emails(params: SearchEmailsInput, context: dict) -> list[dict]:
+async def mail_search(params: SearchEmailsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     folder = validate_mail_folder(params.folder)
     folder_path = "" if folder == "all" else f"/mailFolders/{folder}"
@@ -57,9 +65,16 @@ async def search_emails(params: SearchEmailsInput, context: dict) -> list[dict]:
 
 
 @tool(
-    description="Get the user's most recent emails. Useful for a quick snapshot of recent activity."
+    description=(
+        "List the signed-in user's most recent emails from the last N days, newest first. "
+        "Returns id, subject, sender, date and a preview snippet. Use for 'what came in today' "
+        "or catching up after time away; mail_search is the tool when specific keywords or a "
+        "sender are known. Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_recent_emails",),
 )
-async def get_recent_emails(params: GetRecentEmailsInput, context: dict) -> list[dict]:
+async def mail_list_recent(params: GetRecentEmailsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     since = (datetime.now(UTC) - timedelta(days=params.days_back)).isoformat()
     data = await graph_get(
@@ -75,8 +90,17 @@ async def get_recent_emails(params: GetRecentEmailsInput, context: dict) -> list
     return [_slim_msg(m) for m in (data.get("value") or [])]
 
 
-@tool(description="Get the user's flagged emails that need follow-up.")
-async def get_flagged_emails(params: GetFlaggedEmailsInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List emails the signed-in user has flagged for follow-up, newest first. Returns id, "
+        "subject, sender, date and preview. Flags are the user's own marker for 'come back to "
+        "this', so use it for 'what do I still need to deal with' rather than mail_list_recent, "
+        "which returns everything regardless of state. Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_flagged_emails",),
+)
+async def mail_list_flagged(params: GetFlaggedEmailsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -92,9 +116,16 @@ async def get_flagged_emails(params: GetFlaggedEmailsInput, context: dict) -> li
 
 
 @tool(
-    description="Get all messages in an email thread (conversation). Returns the full thread history."
+    description=(
+        "Read every message in one email conversation, oldest first, given a conversation id "
+        "from any of the mail listing tools. Returns full message bodies rather than previews, "
+        "so it is the tool for understanding what was actually discussed before replying or "
+        "summarising. Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_email_thread",),
 )
-async def get_email_thread(params: GetEmailThreadInput, context: dict) -> list[dict]:
+async def mail_get_thread(params: GetEmailThreadInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -198,14 +229,15 @@ class ProposeEmailInput(BaseModel):
 
 @tool(
     description=(
-        "Render a confirm-email card so the user can review + send a meeting "
-        "recap by email. Does NOT send — returns a card the frontend displays "
-        "with Confirm/Cancel buttons. Recipients are derived server-side from "
-        "the event's attendee list; the LLM cannot pick them. NEVER claim the "
-        "email was sent — the user must click Confirm first."
-    )
+        "Draft an email about a meeting for the user to review and send themselves — it does "
+        "NOT send anything. Returns a confirmation card. Recipients are derived server-side "
+        "from the calendar event's attendee list and cannot be set by the caller, which is what "
+        "makes this safe to use on untrusted input. Requires Calendars.Read."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("propose_email",),
 )
-async def propose_email(params: ProposeEmailInput, context: dict) -> dict:
+async def mail_propose(params: ProposeEmailInput, context: dict) -> dict:
     token = context.get("access_token", "")
     caller = (context.get("user_email") or "").strip().lower()
     if not token:
@@ -266,9 +298,16 @@ def _check_send_email_allowed_domains(
 
 
 @tool(
-    description="Send an email via Microsoft Graph. Use this to share meeting summaries, action items, or other content via email."
+    description=(
+        "Send an email as the signed-in user, with an HTML body and optional CC recipients. The "
+        "message is sent immediately with no confirmation step, so confirm recipients and "
+        "content with the user first. A deployment may restrict recipient domains, in which "
+        "case the send is refused before it reaches Graph. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+    aliases=("send_email",),
 )
-async def send_email(params: SendEmailInput, context: dict) -> dict:
+async def mail_send(params: SendEmailInput, context: dict) -> dict:
     token = context["access_token"]
 
     # Tenant-domain allowlist (security-todo low/nits) — opt-in. When
@@ -500,12 +539,15 @@ class ListEmailAttachmentsInput(BaseModel):
 
 @tool(
     description=(
-        "List the file attachments on an email — name, type and size. Returns metadata only, "
-        "not file contents, so it is safe to call on messages with large attachments. "
-        "Inline images such as signature logos are excluded."
-    )
+        "List the file attachments on one email — name, content type and size in bytes. Returns "
+        "metadata only and never file contents, so it is safe to call on messages with very "
+        "large attachments. Inline images such as signature logos are excluded. Requires "
+        "Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("list_email_attachments",),
 )
-async def list_email_attachments(params: ListEmailAttachmentsInput, context: dict) -> list[dict]:
+async def mail_list_attachments(params: ListEmailAttachmentsInput, context: dict) -> list[dict]:
     """Attachment metadata for the agent surface.
 
     Deliberately not the internal ``fetch_message_attachments``, which downloads

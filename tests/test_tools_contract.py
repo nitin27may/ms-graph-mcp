@@ -181,11 +181,6 @@ class TestToolQualityContract:
         registry = get_registry()
         return [(n, registry.get(n)) for n in (*READ_TOOL_NAMES, *WRITE_TOOL_NAMES)]
 
-    # Phase B backfills the existing 60 tools. Until it lands this fails by
-    # design — it IS the backlog, expressed as a test rather than a note.
-    # strict=True means the day Phase B fixes it, an XPASS breaks the build
-    # and forces this marker to be deleted. It cannot be quietly forgotten.
-    @pytest.mark.xfail(strict=True, reason="Phase B backfill pending")
     def test_every_agent_tool_declares_annotations(self):
         missing = [name for name, spec in self._agent_specs() if spec.annotations is None]
         assert not missing, (
@@ -218,11 +213,6 @@ class TestToolQualityContract:
         ]
         assert not wrong, f"write-tier tools marked read-only: {wrong}"
 
-    # Phase B backfills the existing 60 tools. Until it lands this fails by
-    # design — it IS the backlog, expressed as a test rather than a note.
-    # strict=True means the day Phase B fixes it, an XPASS breaks the build
-    # and forces this marker to be deleted. It cannot be quietly forgotten.
-    @pytest.mark.xfail(strict=True, reason="Phase B backfill pending")
     def test_descriptions_are_long_enough_to_choose_between(self):
         short = [
             f"{name} ({len(spec.description)})"

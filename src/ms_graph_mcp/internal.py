@@ -32,7 +32,7 @@ from ms_graph_mcp.client import (
 from ms_graph_mcp.client import graph_probe_status as _graph_probe_status
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.email import fetch_message_attachments as _fetch_message_attachments
-from ms_graph_mcp.files import get_group_drive as _get_group_drive
+from ms_graph_mcp.files import files_get_group_drive as _get_group_drive
 from ms_graph_mcp.files import walk_drive_descendants as _walk_drive_descendants
 from ms_graph_mcp.files_write import ensure_folder_exists as _ensure_folder_exists
 from ms_graph_mcp.files_write import update_drive_item_content as _update_drive_item_content

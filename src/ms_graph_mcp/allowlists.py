@@ -24,15 +24,15 @@ from ms_graph_mcp.tooling import ToolSpec, get_registry
 # Gated behind X-Write-Scope header. Callers must explicitly request write
 # access; the default surface is read-only.
 WRITE_TOOL_NAMES: tuple[str, ...] = (
-    "send_email",
-    "propose_email",
+    "mail_send",
+    "mail_propose",
     "notes_create_page",
     "tasks_create_todo",
     # files
-    "upload_file",
-    "update_file_content",
-    "create_folder",
-    "create_sharing_link",
+    "files_upload",
+    "files_update_content",
+    "files_create_folder",
+    "files_create_sharing_link",
 )
 
 WRITE_TOOL_NAME_SET: frozenset[str] = frozenset(WRITE_TOOL_NAMES)
@@ -45,11 +45,11 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "calendar_get_event_attendees",
     "calendar_list_events_in_range",
     # email
-    "list_email_attachments",
-    "search_emails",
-    "get_recent_emails",
-    "get_flagged_emails",
-    "get_email_thread",
+    "mail_list_attachments",
+    "mail_search",
+    "mail_list_recent",
+    "mail_list_flagged",
+    "mail_get_thread",
     # meetings
     "meetings_get_transcript",
     "meetings_list_past",
@@ -59,11 +59,11 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "meetings_get_transcript_by_event",
     "meetings_get_attendance_report",
     # files
-    "search_files",
-    "get_trending_files",
-    "get_recent_files",
-    "get_file_content",
-    "get_shared_files",
+    "files_search",
+    "files_list_trending",
+    "files_list_recent",
+    "files_get_content",
+    "files_list_shared_with_me",
     # people
     "people_search",
     "people_get",
@@ -81,7 +81,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "chat_list_channel_messages",
     "chat_list_teams",
     "chat_list_channels",
-    "get_group_drive",
+    "files_get_group_drive",
     # onenote
     "notes_list_notebooks",
     "notes_list_sections",

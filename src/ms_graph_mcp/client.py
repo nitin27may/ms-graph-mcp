@@ -256,6 +256,7 @@ class GraphResult:
     status_code: int
     ok: bool
     text: str
+    content_type: str = ""
     _payload: dict | None = None
 
     def json(self) -> dict:
@@ -270,6 +271,7 @@ async def graph_try_get(
     accept: str = "application/json",
     timeout_seconds: float = 30.0,
     headers: dict[str, str] | None = None,
+    follow_redirects: bool = False,
     **params,
 ) -> GraphResult:
     """GET from Microsoft Graph and return the outcome **without raising**.
@@ -296,6 +298,10 @@ async def graph_try_get(
         async with httpx.AsyncClient(
             verify=not get_config().disable_ssl_verify,
             timeout=httpx.Timeout(timeout_seconds),
+            # File content endpoints answer 302 with a short-lived download URL
+            # on a different host, so the redirect has to be followed to get any
+            # bytes at all.
+            follow_redirects=follow_redirects,
         ) as client:
             logger.info("[Graph] GET %s", path)
             resp = await client.get(url, headers=request_headers)
@@ -318,6 +324,7 @@ async def graph_try_get(
                 status_code=resp.status_code,
                 ok=resp.is_success,
                 text=resp.text,
+                content_type=resp.headers.get("content-type", ""),
                 _payload=payload,
             )
 
@@ -362,6 +369,60 @@ async def graph_post_raw(
                 logger.info("[Graph] POST %s → %s", path, resp.status_code)
             resp.raise_for_status()
             return resp.json()
+
+
+async def graph_put_raw(
+    access_token: str,
+    path: str,
+    content: bytes,
+    content_type: str,
+    *,
+    extra_headers: dict[str, str] | None = None,
+    timeout_seconds: float = 60.0,
+) -> GraphResult:
+    """PUT a raw byte body to a Graph path, returning the outcome without raising.
+
+    File uploads and in-place content replacement both PUT bytes rather than a
+    JSON document, and both need to branch on the status: 412 means the item
+    changed under an ``If-Match``, which the caller reports as a conflict rather
+    than a failure.
+    """
+    url = f"{_GRAPH_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": content_type or "application/octet-stream",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    with _tracer.start_as_current_span(
+        "graph.request",
+        attributes={"http.method": "PUT", "http.url": url, "graph.upload.size": len(content)},
+    ) as span:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify,
+            timeout=httpx.Timeout(timeout_seconds),
+        ) as client:
+            logger.info("[Graph] PUT %s (%d bytes)", path, len(content))
+            resp = await client.put(url, headers=headers, content=content)
+            span.set_attribute("http.status_code", resp.status_code)
+            if not resp.is_success:
+                span.add_event("graph.non_success", {"status_code": resp.status_code})
+                _log_error(resp)
+            else:
+                logger.info("[Graph] PUT %s → %s", path, resp.status_code)
+            payload: dict | None = None
+            if resp.is_success:
+                try:
+                    payload = resp.json()
+                except ValueError:
+                    payload = None
+            return GraphResult(
+                status_code=resp.status_code,
+                ok=resp.is_success,
+                text=resp.text,
+                content_type=resp.headers.get("content-type", ""),
+                _payload=payload,
+            )
 
 
 async def graph_patch(

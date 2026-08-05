@@ -24,8 +24,30 @@ change between minor versions; breaking changes are called out explicitly.
 - Cache hints on `tools/list` (`ttlMs` 5 minutes, `cacheScope: public`), which improve client-side
   prompt-cache hit rates on a tool list that only changes with the caller's scopes.
 
+- Every tool now declares MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`) so clients can tell a calendar read from a mail send.
+- `errors.py` — terminal structured errors carrying `retryable`, plus the required scope on a
+  permission denial, so a model stops retrying a call that can never succeed.
+- `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
+  `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+
 ### Changed
 
+- **All 51 agent-facing tools renamed to namespace-prefixed names** — `mail_search`,
+  `calendar_list_upcoming_events`, `files_upload`, `directory_search_users` and so on. Namespaces
+  follow Graph permission families rather than Microsoft product names. **Every previous name still
+  works as an alias** and will keep working until 0.3.0; aliases are accepted by `tools/call` but
+  never advertised in `tools/list`.
+- Every tool description rewritten to 200–400 characters covering what it does, when to use it,
+  what it returns, how it differs from neighbouring tools, and the delegated permission required.
+  Previously 83% were under 200 characters, with the shortest at 33 — too terse for a model to
+  choose between `people_search`, `directory_search_users` and `people_list_contacts`.
+- `chat_search_messages` no longer disguises failures as empty results. It previously returned `[]`
+  for any non-200, so a missing `Chat.Read` permission was indistinguishable from "no messages
+  matched".
+- Raw `httpx` clients removed from every domain module — 14 in `meetings.py` alone. The two that
+  remain target pre-signed upload/download URLs on other hosts, which are not Graph API calls and
+  must not carry the Authorization header.
 - **Migrated to MCP Python SDK 2.0** and the 2026-07-28 protocol revision. Handlers are now
   constructor callbacks (`on_list_tools` / `on_call_tool`) returning `ListToolsResult` /
   `CallToolResult`, and the low-level `Server` builds the Starlette app itself. 2025-era clients are
