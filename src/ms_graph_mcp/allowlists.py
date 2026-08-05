@@ -28,6 +28,11 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "mail_propose",
     "notes_create_page",
     "tasks_create_todo",
+    # calendar
+    "calendar_create_event",
+    "calendar_update_event",
+    "calendar_cancel_event",
+    "calendar_respond_to_event",
     # files
     "files_upload",
     "files_update_content",
@@ -44,6 +49,8 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "calendar_get_event",
     "calendar_get_event_attendees",
     "calendar_list_events_in_range",
+    "calendar_find_meeting_times",
+    "calendar_get_free_busy",
     # email
     "mail_list_attachments",
     "mail_search",

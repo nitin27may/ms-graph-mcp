@@ -30,6 +30,11 @@ change between minor versions; breaking changes are called out explicitly.
   permission denial, so a model stops retrying a call that can never succeed.
 - `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
   `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- **Calendar write and scheduling** (6 tools). `calendar_create_event`, `calendar_update_event`,
+  `calendar_cancel_event` and `calendar_respond_to_event` in the write tier;
+  `calendar_find_meeting_times` and `calendar_get_free_busy` in the **read** tier — both are POST
+  because their request body is too large for a query string, but neither mutates anything.
+  Booking was the largest functional gap in the surface.
 - `GRAPH_MCP_READ_ONLY` — removes the write tier from a deployment entirely. Write tools are never
   advertised and never dispatchable, whatever scope a caller presents. Enforced at dispatch as well
   as in `tools/list`, because hiding a tool is a context measure rather than a boundary.
