@@ -30,9 +30,19 @@ change between minor versions; breaking changes are called out explicitly.
   permission denial, so a model stops retrying a call that can never succeed.
 - `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
   `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- `GRAPH_MCP_READ_ONLY` — removes the write tier from a deployment entirely. Write tools are never
+  advertised and never dispatchable, whatever scope a caller presents. Enforced at dispatch as well
+  as in `tools/list`, because hiding a tool is a context measure rather than a boundary.
+- [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md) recording that token validation always runs
+  in-server and that no gateway-trust bypass will be added. A test asserts no such setting exists.
 
 ### Changed
 
+- **BREAKING: `GRAPH_MCP_JWT_VERIFY` now defaults to `true`.** It previously defaulted to `false`,
+  which meant an HTTP deployment accepted tokens without verifying their signatures unless someone
+  had read the docs — the unsafe value was the one you got by doing nothing. stdio is unaffected, as
+  it validates no tokens at all. If you run the HTTP transport without JWKS connectivity and
+  knowingly want the old behaviour, set `GRAPH_MCP_JWT_VERIFY=false` explicitly.
 - **All 51 agent-facing tools renamed to namespace-prefixed names** — `mail_search`,
   `calendar_list_upcoming_events`, `files_upload`, `directory_search_users` and so on. Namespaces
   follow Graph permission families rather than Microsoft product names. **Every previous name still
@@ -45,6 +55,10 @@ change between minor versions; breaking changes are called out explicitly.
 - `chat_search_messages` no longer disguises failures as empty results. It previously returned `[]`
   for any non-200, so a missing `Chat.Read` permission was indistinguishable from "no messages
   matched".
+- References to the monorepo this package was extracted from are gone. The self-containment test
+  no longer checks a hardcoded list of former sibling packages; it now derives the allowed import
+  set from `pyproject.toml`, so an undeclared dependency fails the build here rather than on a
+  user's machine.
 - Raw `httpx` clients removed from every domain module — 14 in `meetings.py` alone. The two that
   remain target pre-signed upload/download URLs on other hosts, which are not Graph API calls and
   must not carry the Authorization header.

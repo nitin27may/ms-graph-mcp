@@ -121,7 +121,11 @@ async def list_graph_tools(
     """
     tools = [_to_mcp_tool(spec) for spec in resolve_read_tools()]
     request_ctx = current_request_context.get()
-    if request_ctx.get("write_scope"):
+    # GRAPH_MCP_READ_ONLY removes the write tier from the deployment entirely,
+    # regardless of what the caller asks for. Enforced again in dispatch below —
+    # hiding a tool is a context-efficiency measure, not a security boundary.
+    read_only = get_config().read_only
+    if request_ctx.get("write_scope") and not read_only:
         tools.extend(_to_mcp_tool(spec) for spec in resolve_write_tools())
     # Internal (deterministic) tier — advertised ONLY to trusted internal
     # callers (machine principal + X-Internal-Scope), never to agents/external
@@ -169,7 +173,7 @@ async def dispatch_graph_tool(
         if not request_ctx.get("internal_scope"):
             return _error_result(
                 "internal_scope_required",
-                f"Tool '{name}' is an internal tool. Only the host application's own "
+                f"Tool '{name}' is an internal tool. Only trusted first-party "
                 "callers (machine principal + X-Internal-Scope: true) may invoke it.",
             )
 
@@ -194,6 +198,13 @@ async def dispatch_graph_tool(
 
     # Gate write tools on explicit scope grant
     if name in WRITE_TOOL_NAME_SET:
+        if get_config().read_only:
+            return _error_result(
+                "read_only_deployment",
+                f"Tool '{name}' mutates data, and this server runs with "
+                "GRAPH_MCP_READ_ONLY set. No write tool can be invoked here. This is a "
+                "deployment-level setting; supplying a write scope will not change it.",
+            )
         request_ctx = current_request_context.get()
         if not request_ctx.get("write_scope"):
             return _error_result(

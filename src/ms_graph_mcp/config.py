@@ -44,6 +44,14 @@ class GraphMcpConfig(BaseSettings):
         default=False,
         validation_alias=AliasChoices("GRAPH_MCP_DISABLE_SSL_VERIFY"),
     )
+    # Remove the write tier entirely at startup: never resolved, never
+    # advertised, never dispatchable. Independent of, and stricter than, the
+    # per-request write scope — an operator can deploy a provably read-only
+    # instance without trusting every caller to omit a header.
+    read_only: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("GRAPH_MCP_READ_ONLY"),
+    )
     # Comma-separated allowlist of recipient domains for send_email / propose_email.
     # Empty string = gate disabled (any domain).
     send_email_allowed_domains: str = Field(
@@ -78,11 +86,17 @@ class GraphMcpConfig(BaseSettings):
         default="",
         validation_alias=AliasChoices("GRAPH_MCP_CLIENT_ID", "AZURE_AD_CLIENT_ID"),
     )
-    # Verify the JWT signature. Defaults False so a standalone server (often
-    # without JWKS connectivity) still extracts the token. Turn it on for any
-    # deployment reachable beyond localhost.
+    # Verify the inbound JWT's signature against the tenant's JWKS.
+    #
+    # Defaults TRUE. It used to default False so a server without JWKS
+    # connectivity still started, but that made the unsafe value the one you got
+    # by doing nothing: an HTTP deployment accepted unverified tokens unless
+    # somebody had read the docs. Documentation does not prevent that class of
+    # mistake. stdio is unaffected — it validates no tokens at all.
+    #
+    # Turning it off is still possible and is a deliberate, auditable act.
     jwt_verify: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices("GRAPH_MCP_JWT_VERIFY"),
     )
 

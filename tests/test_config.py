@@ -57,10 +57,11 @@ def test_graph_mcp_names_win_over_azure_ad(monkeypatch):
     assert cfg.tenant_id == "from-graph-mcp"
 
 
-def test_bare_workgraph_legacy_names_are_not_read(monkeypatch):
-    # Regression guard for the extraction: the old host-app env names were
-    # deliberately dropped, so a stray DISABLE_SSL_VERIFY in the environment
-    # must NOT silently reconfigure this server.
+def test_unprefixed_env_names_are_ignored(monkeypatch):
+    # Every setting is read under a GRAPH_MCP_ prefix. Bare names like
+    # DISABLE_SSL_VERIFY are common enough that another tool in the same
+    # environment may well set one, and it must not silently reconfigure this
+    # server — least of all the TLS or shared-secret settings.
     monkeypatch.setenv("DISABLE_SSL_VERIFY", "true")
     monkeypatch.setenv("BROWSE_MAX_FILES", "4")
     monkeypatch.setenv("AGENT_SHARED_SECRET", "leaked")

@@ -1,6 +1,6 @@
 """Internal (deterministic) tool tier for graph-mcp.
 
-These tools are for the host application's **own** ETL / workers / REST routes /
+These tools are for an embedding application's **own** ETL / workers / REST routes /
 action-sinks calling the MCP as plain functions over HTTP — NOT the LLM-agent
 surface and NOT external MCP clients. They are listed/dispatched only when the
 request carries the internal scope (``X-Internal-Scope: true``), which the auth
@@ -55,7 +55,7 @@ class GraphRequestInput(BaseModel):
 @tool(
     description=(
         "INTERNAL passthrough — issue an arbitrary Microsoft Graph request. For the "
-        "Host application's own ETL/REST callers only; not part of the agent tool surface."
+        "Trusted first-party ETL/REST callers only; not part of the agent tool surface."
     )
 )
 async def graph_request(params: GraphRequestInput, context: dict) -> Any:
@@ -86,7 +86,7 @@ async def graph_request(params: GraphRequestInput, context: dict) -> Any:
 
 
 # ── Named internal tools ──────────────────────────────────────────────────────
-# Reusable Graph operations the fleet's ETL/workers call as plain functions over
+# Reusable Graph operations first-party ETL/workers call as plain functions over
 # HTTP. Each wraps the canonical domain helper; the Graph token comes from context
 # (already OBO-exchanged by dispatch for per-user callers).
 

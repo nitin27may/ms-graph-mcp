@@ -1,6 +1,6 @@
 """Internal (deterministic) tool tier — scope gating + passthrough + client-creds.
 
-The internal tier is for the host application's own ETL/REST callers (machine
+The internal tier is for trusted first-party ETL/REST callers (machine
 principal + X-Internal-Scope). It must be invisible to agents/external clients and
 rejected without the internal scope.
 """

@@ -23,6 +23,7 @@ from __future__ import annotations
 import ast
 import importlib
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -119,37 +120,51 @@ class TestPackageLayout:
                 f"`from ms_graph_mcp import {name} as graph_{name}` works"
             )
 
-    def test_package_is_self_contained(self):
-        """Extraction guard — no module may import the original host application.
+    def test_package_imports_nothing_undeclared(self):
+        """Every third-party import must appear in pyproject's dependencies.
 
-        This package was lifted out of a larger monorepo; nothing here may reach
-        back into it (or into the internal libraries that were absorbed).
+        A publishable package that imports something it does not declare works
+        fine on the developer's machine and fails on a user's. Deriving the
+        allowed set from pyproject rather than hardcoding a list means adding a
+        dependency updates this test automatically, and forgetting to declare
+        one fails it.
         """
+        import sys
+        import tomllib
+
         import ms_graph_mcp
 
-        forbidden = (
-            "shared",
-            "agents",
-            "integrations",
-            "control_plane",
-            "wg_tool_core",
-            "wg_service_auth",
-        )
-        pkg_dir = Path(ms_graph_mcp.__path__[0])
+        root = Path(ms_graph_mcp.__path__[0]).parent.parent
+        meta = tomllib.loads((root / "pyproject.toml").read_text())
+        # "httpx>=0.28,<1.0" -> "httpx"; "pyjwt[crypto]>=2.10" -> "pyjwt"
+        declared = {
+            re.split(r"[\[><=!;\s]", dep)[0].replace("-", "_").lower()
+            for dep in meta["project"]["dependencies"]
+        }
+        # Distribution name and import name differ for these.
+        declared |= {"jwt", "opentelemetry", "mcp_types", "dateutil"}
+        allowed = declared | set(sys.stdlib_module_names) | {"ms_graph_mcp"}
+
         offenders: list[str] = []
-        for py in pkg_dir.rglob("*.py"):
+        for py in Path(ms_graph_mcp.__path__[0]).rglob("*.py"):
             tree = ast.parse(py.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     names = [a.name for a in node.names]
                 elif isinstance(node, ast.ImportFrom):
+                    if node.level:  # relative import, always fine
+                        continue
                     names = [node.module or ""]
                 else:
                     continue
                 for name in names:
-                    if name.split(".")[0] in forbidden:
-                        offenders.append(f"{py.name}:{node.lineno} → {name}")
-        assert not offenders, "package reaches outside itself: " + "; ".join(offenders)
+                    top = name.split(".")[0].lower()
+                    if top and top not in allowed:
+                        offenders.append(f"{py.name}:{node.lineno} -> {name}")
+        assert not offenders, (
+            "package imports modules not declared in pyproject dependencies: "
+            + "; ".join(sorted(set(offenders)))
+        )
 
 
 class TestToolQualityContract:

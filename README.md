@@ -5,9 +5,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 55
-tools across calendar, email, meetings (including transcripts), Teams, files, people, directory,
-tasks and OneNote, over **stdio** or **Streamable HTTP**.
+A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 60
+tools across calendar, email, meetings (including transcripts), Teams chat, files, people,
+directory, tasks and OneNote, over **stdio** or **Streamable HTTP**.
 
 - **No `msgraph-sdk`, no `azure-identity`** — the Graph client is raw `httpx`, so the dependency
   tree stays small and the wire behaviour is inspectable.
@@ -69,7 +69,7 @@ GRAPH_MCP_ACCESS_TOKEN=<a delegated Microsoft Graph token> \
 |---|---|
 | `GRAPH_MCP_ACCESS_TOKEN` | The delegated Graph token every tool call uses. |
 | `GRAPH_MCP_USER_EMAIL` | Caller identity, used for tenant-scoping in some tools. |
-| `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 4 write tools. Default off. |
+| `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 8 write tools. Default off. |
 
 ### Streamable HTTP
 
@@ -103,7 +103,7 @@ hooks. The domain modules also work as plain async functions, without MCP:
 ```python
 from ms_graph_mcp import calendar
 
-events = await calendar.get_upcoming_meetings(params, {"access_token": tok})
+events = await calendar.calendar_list_upcoming_events(params, {"access_token": tok})
 ```
 
 ## Configuration
@@ -117,18 +117,20 @@ All settings are read from the environment (a `.env` in the working directory is
 | TLS verification off (corporate proxy) | `GRAPH_MCP_DISABLE_SSL_VERIFY` | `false` |
 | Recipient-domain allowlist for send/propose email | `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` | `""` (no gate) |
 | Max files per browse | `GRAPH_MCP_BROWSE_MAX_FILES` | `500` |
+| Remove the write tier entirely | `GRAPH_MCP_READ_ONLY` | `false` |
 | Shared secret for machine callers | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) |
 | Tenant id | `GRAPH_MCP_TENANT_ID` / `AZURE_AD_TENANT_ID` | `""` |
 | Client id | `GRAPH_MCP_CLIENT_ID` / `AZURE_AD_CLIENT_ID` | `""` |
 | Client secret | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
-| Verify JWT signatures (JWKS) | `GRAPH_MCP_JWT_VERIFY` | `false` |
+| Verify JWT signatures (JWKS) | `GRAPH_MCP_JWT_VERIFY` | `true` |
 | Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `false` |
 | Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
 | Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `https://graph.microsoft.com/.default` |
 | HTTP port | `GRAPH_MCP_PORT` | `8094` |
 
-**Turn `GRAPH_MCP_JWT_VERIFY` on for anything reachable beyond localhost.** It defaults off so a
-local stdio run works without JWKS connectivity.
+**`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity —
+with it off, token signatures are not verified. There is deliberately no setting that skips
+authentication altogether; see [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md).
 
 ## Tool surface
 
@@ -136,12 +138,22 @@ Three tiers, one auth seam.
 
 | Tier | Count | Exposed when | Examples |
 |---|---:|---|---|
-| **Read** | 42 | always | `get_upcoming_meetings`, `search_emails`, `get_meeting_transcript`, `search_files`, `get_user_groups` |
-| **Write** | 4 | `X-Write-Scope: true` | `send_email`, `propose_email`, `save_to_onenote`, `create_todo_task` |
+| **Read** | 43 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `directory_list_user_groups` |
+| **Write** | 8 | `X-Write-Scope: true` | `mail_send`, `files_upload`, `files_create_sharing_link`, `notes_create_page`, `tasks_create_todo` |
 | **Internal** | 9 | `X-Internal-Scope: true`, machine principal only | `graph_request` passthrough, drive walk/upload, message attachments, app-only `probe_graph_access` |
 
-By domain: meetings 7 · directory 7 · email 6 · files 6 · tasks 6 · calendar 4 · Teams 4 ·
-people 3 · OneNote 3.
+Tool names are namespaced by Graph permission family rather than by Microsoft product, because real
+questions cross product boundaries — `files_` covers OneDrive *and* SharePoint document libraries,
+which are the same `driveItem` resource underneath.
+
+By namespace: files 10 · directory 7 · mail 7 · meetings 7 · tasks 6 · calendar 4 · chat 4 ·
+people 3 · notes 3.
+
+Every tool declares MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients
+know what needs confirming, and every description names the delegated permission it requires.
+
+> **Renamed in 0.2.0.** Every pre-0.2.0 tool name still works as an alias and will keep working
+> until 0.3.0. Aliases are accepted by `tools/call` but are not advertised in `tools/list`.
 
 The lists live in `ms_graph_mcp.allowlists` and are resolved against the tool registry on every
 `tools/list`. A name in an allowlist with no registered tool raises rather than being skipped — the

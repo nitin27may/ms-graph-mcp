@@ -96,7 +96,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
 READ_TOOL_NAME_SET: frozenset[str] = frozenset(READ_TOOL_NAMES)
 
 # ── Internal (deterministic) tool tier ────────────────────────────────────────
-# For the host application's OWN ETL / workers / REST routes / write-sinks calling
+# For an embedding application's OWN ETL / workers / REST routes / write-sinks calling
 # the MCP as plain functions over HTTP. Advertised + callable ONLY when the request
 # carries the internal scope (``X-Internal-Scope: true``), which auth.py honours
 # only for the machine-secret principal. NEVER exposed to LLM agents or external

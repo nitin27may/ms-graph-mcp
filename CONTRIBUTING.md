@@ -75,9 +75,9 @@ not a workaround.
   This distinction came out of a security audit.
 - **Dispatch fails closed.** Unknown tool name, missing scope, and missing Graph token each return a
   structured error before any call to Graph is made.
-- **The package must not import its original monorepo.** `test_package_is_self_contained` AST-walks
-  every module and fails on imports of `shared`, `agents`, `integrations`, `control_plane`,
-  `wg_tool_core`, or `wg_service_auth`.
+- **Every third-party import must be declared in `pyproject.toml`.**
+  `test_package_imports_nothing_undeclared` derives the allowed set from the dependency list, so
+  adding a dependency updates the test automatically and forgetting to declare one fails it.
 - **`msgraph-sdk` and `azure-identity` are not dependencies.** See
   [ADR 0002](docs/adr/0002-raw-httpx-graph-client.md) before proposing them.
 

@@ -102,7 +102,7 @@ def test_upload_simple_put_success():
         result = asyncio.run(
             upload_file_to_drive(
                 "tok",
-                "WorkGraph/Documents",
+                "Reports/Q3",
                 "report.pdf",
                 b"hello",
                 "application/pdf",
@@ -114,7 +114,7 @@ def test_upload_simple_put_success():
     # rename conflict-behavior so an existing filename gets a "-1" suffix
     # rather than a 409.
     assert token == "tok"
-    assert "/me/drive/root:/WorkGraph/Documents/report.pdf:/content" in path
+    assert "/me/drive/root:/Reports/Q3/report.pdf:/content" in path
     assert "@microsoft.graph.conflictBehavior=rename" in path
     assert content == b"hello"
     assert mime == "application/pdf"
@@ -134,7 +134,7 @@ def test_upload_simple_put_failure_raises_typed_error():
             asyncio.run(
                 upload_file_to_drive(
                     "tok",
-                    "WorkGraph/Documents",
+                    "Reports/Q3",
                     "report.pdf",
                     b"hello",
                     "application/pdf",
@@ -175,7 +175,7 @@ def test_upload_large_file_uses_upload_session():
         result = asyncio.run(
             upload_file_to_drive(
                 "tok",
-                "WorkGraph/Documents",
+                "Reports/Q3",
                 "big.pdf",
                 big,
                 "application/pdf",
@@ -286,15 +286,15 @@ def test_ensure_folder_recurses_through_segments():
         }
 
     with patch("ms_graph_mcp.files_write.graph_post", side_effect=fake_post):
-        result = asyncio.run(ensure_folder_exists("tok", "WorkGraph/Documents"))
+        result = asyncio.run(ensure_folder_exists("tok", "Reports/Q3"))
 
-    # Two POSTs — root/children for "WorkGraph", then items/id-WorkGraph/children for "Documents".
+    # Two POSTs — root/children for "Reports", then items/id-Reports/children for "Q3".
     assert len(posted) == 2
     assert posted[0][0] == "/me/drive/root/children"
-    assert posted[0][1]["name"] == "WorkGraph"
-    assert posted[1][0] == "/me/drive/items/id-WorkGraph/children"
-    assert posted[1][1]["name"] == "Documents"
-    assert result["id"] == "id-Documents"
+    assert posted[0][1]["name"] == "Reports"
+    assert posted[1][0] == "/me/drive/items/id-Reports/children"
+    assert posted[1][1]["name"] == "Q3"
+    assert result["id"] == "id-Q3"
 
 
 def test_ensure_folder_409_falls_back_to_lookup():
@@ -312,7 +312,7 @@ def test_ensure_folder_409_falls_back_to_lookup():
         # Path lookup of the existing folder.
         return {
             "id": "existing-id",
-            "name": "WorkGraph",
+            "name": "Reports",
             "parentReference": {"driveId": "drive-1"},
         }
 
@@ -320,7 +320,7 @@ def test_ensure_folder_409_falls_back_to_lookup():
         patch("ms_graph_mcp.files_write.graph_post", side_effect=fake_post),
         patch("ms_graph_mcp.files_write.graph_get", side_effect=fake_get),
     ):
-        result = asyncio.run(ensure_folder_exists("tok", "WorkGraph"))
+        result = asyncio.run(ensure_folder_exists("tok", "Reports"))
 
     assert result["id"] == "existing-id"
 
@@ -379,7 +379,7 @@ def test_upload_without_drive_id_uses_me_drive():
         asyncio.run(
             upload_file_to_drive(
                 "tok",
-                "WorkGraph/Docs",
+                "Reports/Docs",
                 "doc.pdf",
                 b"hello",
                 "application/pdf",
@@ -387,7 +387,7 @@ def test_upload_without_drive_id_uses_me_drive():
         )
 
     url = put_mock.await_args.args[1]
-    assert "/me/drive/root:/WorkGraph/Docs/doc.pdf:/content" in url
+    assert "/me/drive/root:/Reports/Docs/doc.pdf:/content" in url
     assert "/drives/" not in url
 
 

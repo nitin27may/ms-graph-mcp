@@ -2,7 +2,7 @@
 
 Builds a Starlette app that serves the MCP Streamable HTTP transport at ``/mcp``
 and exposes an unauthenticated ``/health`` probe. Usable standalone (run via the
-``ms-graph-mcp-http`` console script) or wrapped by a host application, which
+``ms-graph-mcp-http`` console script) or embedded in another application, which
 injects its telemetry + the shared-secret config.
 
 MCP SDK 2.x note: the low-level ``Server`` now builds the Starlette app itself
@@ -63,7 +63,7 @@ def build_app(
     manager.
 
     ``cfg`` overrides the active package config. ``setup_telemetry`` /
-    ``instrument_starlette`` are optional hooks a host application supplies to
+    ``instrument_starlette`` are optional hooks an embedding application supplies to
     wire OTEL; standalone runs leave them ``None``.
     """
     if cfg is not None:
