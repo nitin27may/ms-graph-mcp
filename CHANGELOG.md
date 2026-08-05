@@ -71,6 +71,25 @@ change between minor versions; breaking changes are called out explicitly.
   as in `tools/list`, because hiding a tool is a context measure rather than a boundary.
 - [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md) recording that token validation always runs
   in-server and that no gateway-trust bypass will be added. A test asserts no such setting exists.
+- **OAuth protected-resource discovery (RFC 9728).** With `GRAPH_MCP_RESOURCE_URL` set, the server
+  publishes `/.well-known/oauth-protected-resource` and answers an unauthenticated request with a
+  `401` carrying `WWW-Authenticate: Bearer resource_metadata="…"`, so a spec-compliant MCP client
+  can discover the tenant's authorization server rather than needing it configured by hand. Unset,
+  discovery is off — behind a proxy the server cannot know its own public URL, and publishing a
+  guess would send clients somewhere wrong. Entra implements no RFC 7591 dynamic client
+  registration, so clients still need a pre-registered app id; that limitation is documented.
+- `GRAPH_MCP_ALLOWED_HOSTS` — additional `Host` values the HTTP transport accepts, for names the
+  resource URL does not cover.
+- `GRAPH_MCP_LOG_LEVEL` — applies to both console entry points, defaulting to `WARNING` so an
+  ordinary run stays quiet. Everything is written to stderr at every level, including on stdio
+  where stdout carries JSON-RPC. Previously nothing configured logging at all, so the per-request
+  `[Graph]` lines in `client.py` could not be turned on.
+- **Container image**, published to GHCR on release for `linux/amd64` and `linux/arm64` with build
+  provenance attestations. Multi-stage, non-root (uid 10001, unable to write to its own virtualenv),
+  with a `HEALTHCHECK` against `/health`. HTTP transport only — stdio speaks JSON-RPC over the
+  process's own stdin/stdout and gains nothing from a container.
+- `docs/testing.md` and `docs/debugging.md` — running the suite, driving the server with MCP
+  Inspector, and reading the logs, error codes and Entra failures.
 
 ### Changed
 
@@ -110,6 +129,29 @@ change between minor versions; breaking changes are called out explicitly.
 - The Streamable HTTP request body limit is set to 16 MiB, up from the SDK's 4 MiB default, so the
   internal tier's base64 upload tool is not capped at roughly 3 MiB of actual file.
 - Applied `ruff format` across the codebase. No behaviour change.
+- The release pipeline is staged rather than two parallel tracks. Every release now goes
+  `build → testpypi → verify → pypi`, where `verify` installs the artifact back out of TestPyPI
+  into a clean environment and runs it. Previously a real tag went straight to PyPI having never
+  touched TestPyPI.
+
+### Fixed
+
+- **The HTTP transport rejected its own public hostname.** The MCP SDK keys DNS-rebinding
+  protection off the `host` argument to `streamable_http_app()`, and the default `127.0.0.1` makes
+  it trust localhost alone. This process binds `0.0.0.0`, so behind an ingress every request
+  arrived with a real hostname and was refused with `421 Misdirected Request` before reaching any
+  handler. Accepted hosts are now explicit, derived from `GRAPH_MCP_RESOURCE_URL`. Localhost stays
+  valid and an unrelated host is still refused.
+- The release workflow stripped `-rc` before comparing the tag to `pyproject.toml`, so tagging
+  `v0.2.0-rc1` against version `0.2.0` passed and would have published a *stable* `0.2.0` from a
+  release-candidate tag. Tag and version are now compared as PEP 440 versions.
+- `missing_graph_token` told stdio users to set the `X-Graph-Token` header, which does not exist in
+  that transport. It now names the fix for the transport in use.
+- MCP Inspector does not pass its own environment to the server it spawns, so the documented
+  `GRAPH_MCP_CLIENT_ID=… npx @modelcontextprotocol/inspector …` invocation started the server with
+  no client id at all. The README now uses `-e`.
+- README links are absolute, so they resolve on the PyPI project page, which renders the file with
+  no repository to resolve relative paths against.
 
 ## [0.1.0]
 
