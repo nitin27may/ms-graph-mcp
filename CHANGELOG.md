@@ -30,6 +30,15 @@ change between minor versions; breaking changes are called out explicitly.
   permission denial, so a model stops retrying a call that can never succeed.
 - `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
   `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- **Interactive sign-in for the stdio transport.** Set `GRAPH_MCP_CLIENT_ID` and
+  `GRAPH_MCP_TENANT_ID` and the server signs the user in through the browser — normal Microsoft 365
+  SSO including MFA and conditional access — instead of requiring a pre-acquired token in a config
+  file. Falls back to device code over SSH or in containers. Tokens are cached owner-only under
+  `~/.ms-graph-mcp/`, and refreshed on every tool call so a session does not go stale after an hour.
+  `GRAPH_MCP_ACCESS_TOKEN` still works for CI.
+- `GRAPH_MCP_SCOPES` — the delegated scopes requested at sign-in. Read-only by default.
+- README: app-registration walkthrough and copy-paste config for VS Code, Claude Code, Claude
+  Desktop and MCP Inspector, plus a troubleshooting table for the common Entra errors.
 - **Mail actions** (4 tools). `mail_reply`, `mail_reply_all`, `mail_forward`, `mail_mark_read`.
   Forwarding is subject to the recipient-domain allowlist because the caller chooses the
   recipients; replying is not, because the thread fixes them.

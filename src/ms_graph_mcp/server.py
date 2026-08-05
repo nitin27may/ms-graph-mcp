@@ -214,6 +214,17 @@ async def dispatch_graph_tool(
             )
 
     context = current_request_context.get()
+    # The stdio transport signs the user in rather than being handed a token, so
+    # it supplies a provider instead. Resolved on every call because access
+    # tokens expire after about an hour; MSAL serves from its cache and only
+    # reaches the network when the token has actually gone stale.
+    provider = context.get("token_provider")
+    if provider is not None:
+        try:
+            context = {**context, "access_token": provider()}
+        except Exception as exc:
+            return _error_result("sign_in_failed", f"Could not obtain a Graph token: {exc}")
+
     if not context.get("access_token"):
         return _error_result(
             "missing_graph_token",

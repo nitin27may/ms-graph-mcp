@@ -128,3 +128,58 @@ def test_build_graph_mcp_server_registers_handlers():
     # registrations, so assert the wired handlers are reachable by method.
     assert server.get_request_handler("tools/list") is not None
     assert server.get_request_handler("tools/call") is not None
+
+
+async def test_dispatch_resolves_a_token_provider_before_calling(monkeypatch, call_tool):
+    """The stdio transport signs in rather than being handed a token.
+
+    It supplies a callable instead, and dispatch must resolve it on every call —
+    Graph access tokens expire after about an hour, so a token captured once at
+    startup goes stale mid-session.
+    """
+    captured: dict = {}
+
+    class _Reg:
+        def canonical_name(self, name):
+            return name
+
+        async def call(self, name, arguments_json, context):
+            captured["token"] = context["access_token"]
+            return {"ok": True}
+
+    monkeypatch.setattr("ms_graph_mcp.server.get_registry", lambda: _Reg())
+
+    calls = {"n": 0}
+
+    def _provider():
+        calls["n"] += 1
+        return f"token-{calls['n']}"
+
+    cv = current_request_context.set({"access_token": "", "token_provider": _provider})
+    try:
+        await call_tool("people_get_my_profile", {})
+        first = captured["token"]
+        await call_tool("people_get_my_profile", {})
+    finally:
+        current_request_context.reset(cv)
+
+    assert first == "token-1"
+    assert captured["token"] == "token-2", "the provider must be consulted on every call"
+
+
+async def test_dispatch_reports_a_sign_in_failure_as_a_tool_error(call_tool):
+    """A failed sign-in must reach the model, not crash the protocol."""
+
+    def _provider():
+        raise RuntimeError("device flow timed out")
+
+    cv = current_request_context.set({"access_token": "", "token_provider": _provider})
+    try:
+        result = await call_tool("people_get_my_profile", {})
+    finally:
+        current_request_context.reset(cv)
+
+    assert result.is_error is True
+    payload = json.loads(result.content[0].text)
+    assert payload["error"] == "sign_in_failed"
+    assert "device flow timed out" in payload["message"]

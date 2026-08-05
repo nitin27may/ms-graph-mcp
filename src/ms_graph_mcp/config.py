@@ -52,6 +52,18 @@ class GraphMcpConfig(BaseSettings):
         default=False,
         validation_alias=AliasChoices("GRAPH_MCP_READ_ONLY"),
     )
+    # Delegated scopes requested when the stdio transport signs the user in
+    # interactively. Deliberately a read-only default: a user running this
+    # locally for the first time should not be consenting to send mail on their
+    # behalf. Add write scopes explicitly when write tools are wanted.
+    scopes: str = Field(
+        default=(
+            "User.Read,Mail.Read,Calendars.Read,Files.Read.All,People.Read,"
+            "Chat.Read,Tasks.Read,Notes.Read,Contacts.Read"
+        ),
+        validation_alias=AliasChoices("GRAPH_MCP_SCOPES"),
+    )
+
     # Comma-separated allowlist of recipient domains for send_email / propose_email.
     # Empty string = gate disabled (any domain).
     send_email_allowed_domains: str = Field(
@@ -131,6 +143,10 @@ class GraphMcpConfig(BaseSettings):
         default="https://graph.microsoft.com/.default",
         validation_alias=AliasChoices("GRAPH_MCP_OBO_SCOPES"),
     )
+
+    @property
+    def scopes_list(self) -> list[str]:
+        return [s.strip() for s in self.scopes.split(",") if s.strip()]
 
     @property
     def obo_scopes_list(self) -> list[str]:

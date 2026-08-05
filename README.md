@@ -5,9 +5,12 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
 
-A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 60
-tools across calendar, email, meetings (including transcripts), Teams chat, files, people,
-directory, tasks and OneNote, over **stdio** or **Streamable HTTP**.
+A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 85
+tools across mail, calendar, meetings (including transcripts), Teams chat, files, SharePoint,
+people, contacts, directory, tasks and OneNote, over **stdio** or **Streamable HTTP**.
+
+**Signs you in with your own Microsoft account** — browser SSO, no token to paste, no client
+secret.
 
 - **No `msgraph-sdk`, no `azure-identity`** — the Graph client is raw `httpx`, so the dependency
   tree stays small and the wire behaviour is inspectable.
@@ -40,38 +43,158 @@ uv add ms-graph-mcp
 pip install ms-graph-mcp
 ```
 
-## Run
+## Quick start
 
-### stdio — Claude Desktop, Claude Code, any local MCP client
+You need an **Entra ID app registration** — it takes about two minutes, and no client secret is
+involved. The server signs you in through your browser; no token is ever pasted into a config file.
+
+### 1. Register the app
+
+In the [Entra portal](https://entra.microsoft.com) → **App registrations** → **New registration**:
+
+- **Name:** anything, e.g. `ms-graph-mcp`
+- **Supported account types:** *Accounts in this organizational directory only*
+- **Redirect URI:** select **Public client/native**, value `http://localhost`
+
+Then, on the new app:
+
+- **Authentication** → enable **Allow public client flows** (this permits device-code sign-in)
+- **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**, and
+  add what you want the agent to reach. A sensible read-only starting set:
+
+  ```
+  User.Read  Mail.Read  Calendars.Read  Files.Read.All
+  People.Read  Chat.Read  Tasks.Read  Notes.Read  Contacts.Read
+  ```
+
+Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
+
+### 2. Run it
 
 ```bash
-GRAPH_MCP_ACCESS_TOKEN=<a delegated Microsoft Graph token> \
+GRAPH_MCP_CLIENT_ID=<application-client-id> \
+GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
   uvx --from ms-graph-mcp ms-graph-mcp
 ```
 
+On first run your browser opens for normal Microsoft 365 sign-in — SSO, MFA and conditional access
+all apply as usual. The result is cached in `~/.ms-graph-mcp/token_cache.json` (owner-readable
+only), so later runs start silently. Over SSH or in a container it falls back to device-code
+sign-in and prints a code to stderr.
+
+## Add it to your client
+
+The same three settings work everywhere. **No access token goes in these files.**
+
+### VS Code
+
+`.vscode/mcp.json` in your workspace, or **MCP: Open User Configuration** for all projects:
+
 ```jsonc
-// claude_desktop_config.json
 {
-  "mcpServers": {
+  "inputs": [
+    { "id": "clientId", "type": "promptString", "description": "Entra application (client) ID" },
+    { "id": "tenantId", "type": "promptString", "description": "Entra directory (tenant) ID" }
+  ],
+  "servers": {
     "ms-graph": {
+      "type": "stdio",
       "command": "uvx",
       "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
       "env": {
-        "GRAPH_MCP_ACCESS_TOKEN": "<delegated graph token>",
-        "GRAPH_MCP_USER_EMAIL": "you@yourtenant.com"
+        "GRAPH_MCP_CLIENT_ID": "${input:clientId}",
+        "GRAPH_MCP_TENANT_ID": "${input:tenantId}"
       }
     }
   }
 }
 ```
 
-| stdio env var | Purpose |
-|---|---|
-| `GRAPH_MCP_ACCESS_TOKEN` | The delegated Graph token every tool call uses. |
-| `GRAPH_MCP_USER_EMAIL` | Caller identity, used for tenant-scoping in some tools. |
-| `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 8 write tools. Default off. |
+The `inputs` block means VS Code prompts once and stores the values itself, so the file is safe to
+commit. Hardcode the two ids instead if you prefer — neither is a secret.
 
-### Streamable HTTP
+### Claude Code
+
+```bash
+claude mcp add ms-graph \
+  --env GRAPH_MCP_CLIENT_ID=<application-client-id> \
+  --env GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
+  -- uvx --from ms-graph-mcp ms-graph-mcp
+```
+
+Then `/mcp` in Claude Code to check it connected.
+
+### Claude Desktop
+
+`claude_desktop_config.json` — macOS
+`~/Library/Application Support/Claude/`, Windows `%APPDATA%\Claude\`:
+
+```jsonc
+{
+  "mcpServers": {
+    "ms-graph": {
+      "command": "uvx",
+      "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
+      "env": {
+        "GRAPH_MCP_CLIENT_ID": "<application-client-id>",
+        "GRAPH_MCP_TENANT_ID": "<directory-tenant-id>"
+      }
+    }
+  }
+}
+```
+
+### MCP Inspector
+
+Useful for checking the server independently of any client:
+
+```bash
+GRAPH_MCP_CLIENT_ID=… GRAPH_MCP_TENANT_ID=… \
+  npx @modelcontextprotocol/inspector uvx --from ms-graph-mcp ms-graph-mcp
+```
+
+### Running from a clone
+
+Substitute the command while developing:
+
+```jsonc
+"command": "uv",
+"args": ["run", "--directory", "/path/to/ms-graph-mcp", "ms-graph-mcp"]
+```
+
+### stdio settings
+
+| Env var | Purpose |
+|---|---|
+| `GRAPH_MCP_CLIENT_ID` | Entra application (client) id. Enables interactive sign-in. |
+| `GRAPH_MCP_TENANT_ID` | Entra directory (tenant) id. Defaults to `common`. |
+| `GRAPH_MCP_SCOPES` | Comma-separated delegated scopes to request. Defaults to a read-only set. |
+| `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 23 write tools. **Default off.** |
+| `GRAPH_MCP_USER_EMAIL` | Caller identity, used for tenant-scoping in some tools. Optional. |
+| `GRAPH_MCP_ACCESS_TOKEN` | A pre-acquired delegated token, instead of signing in. For CI. |
+| `GRAPH_MCP_FORCE_DEVICE_CODE` | `true` to skip the browser and always use device-code sign-in. |
+
+**Turning on write tools.** They are off by default: with them enabled an agent can send mail,
+book meetings and change files as you. To use them, add the matching write scopes to
+`GRAPH_MCP_SCOPES` *and* set `GRAPH_MCP_WRITE_SCOPE=true`:
+
+```
+GRAPH_MCP_SCOPES=User.Read,Mail.ReadWrite,Mail.Send,Calendars.ReadWrite,Files.ReadWrite.All,Tasks.ReadWrite,ChatMessage.Send
+GRAPH_MCP_WRITE_SCOPE=true
+```
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `AADSTS7000218` on sign-in | **Allow public client flows** is not enabled on the app registration. |
+| `AADSTS50011` redirect mismatch | The redirect URI is not `http://localhost`, or the platform is not *Public client/native*. |
+| `SCOPE_DENIED` from a tool | The permission that tool needs was not consented. The error names it — add it in **API permissions** and sign in again. |
+| Sign-in prompts every time | The cache at `~/.ms-graph-mcp/token_cache.json` is not writable. |
+| Browser never opens | Expected over SSH or in containers — use the device code printed to stderr. |
+| Client shows "server disconnected" | Run the same command in a terminal; startup errors go to stderr and the client usually hides them. |
+
+## Streamable HTTP — hosted deployments
 
 ```bash
 GRAPH_MCP_PORT=8094 uvx --from ms-graph-mcp ms-graph-mcp-http
@@ -138,16 +261,16 @@ Three tiers, one auth seam.
 
 | Tier | Count | Exposed when | Examples |
 |---|---:|---|---|
-| **Read** | 43 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `directory_list_user_groups` |
-| **Write** | 8 | `X-Write-Scope: true` | `mail_send`, `files_upload`, `files_create_sharing_link`, `notes_create_page`, `tasks_create_todo` |
+| **Read** | 53 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `directory_list_user_groups` |
+| **Write** | 23 | `X-Write-Scope: true` | `mail_send`, `files_upload`, `files_create_sharing_link`, `notes_create_page`, `tasks_create_todo` |
 | **Internal** | 9 | `X-Internal-Scope: true`, machine principal only | `graph_request` passthrough, drive walk/upload, message attachments, app-only `probe_graph_access` |
 
 Tool names are namespaced by Graph permission family rather than by Microsoft product, because real
 questions cross product boundaries — `files_` covers OneDrive *and* SharePoint document libraries,
 which are the same `driveItem` resource underneath.
 
-By namespace: files 10 · directory 7 · mail 7 · meetings 7 · tasks 6 · calendar 4 · chat 4 ·
-people 3 · notes 3.
+By namespace: mail 11 · tasks 11 · calendar 10 · files 10 · chat 8 · directory 7 · meetings 7 ·
+people 6 · notes 5 · search 1.
 
 Every tool declares MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients
 know what needs confirming, and every description names the delegated permission it requires.
