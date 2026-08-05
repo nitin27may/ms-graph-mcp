@@ -3,12 +3,50 @@
 from __future__ import annotations
 
 import json
+import socket
 from typing import Any
 
 import mcp.types as types
 import pytest
 
 from ms_graph_mcp.config import get_config, reset_config
+
+
+class EscapedToTheNetwork(RuntimeError):
+    """A test tried to open a real connection."""
+
+
+@pytest.fixture(autouse=True)
+def _no_network(monkeypatch):
+    """Fail loudly if a test reaches the network, rather than quietly doing it.
+
+    Every test here mocks Graph, so a real connection means a mock is not
+    applied — and the failure mode is nasty: the call goes out to Graph with
+    whatever token is lying around, the test fails with a puzzling 401 instead
+    of naming the unpatched call, and the suite gets slow and flaky in CI.
+
+    This is not hypothetical. The tests patch the *global* ``httpx.AsyncClient``
+    rather than the name bound inside ``ms_graph_mcp.client``, which works only
+    while the two are the same module object. Aliasing the import — as an httpx2
+    migration would — silently sends live requests to Microsoft. That was found
+    by spiking exactly that change (see issue #25).
+
+    Loopback stays open: the Starlette ``TestClient`` and the HTTP transport
+    tests are in-process and legitimately use it.
+    """
+    real_connect = socket.socket.connect
+
+    def guarded(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if isinstance(host, str) and host not in ("127.0.0.1", "::1", "localhost"):
+            raise EscapedToTheNetwork(
+                f"a test tried to connect to {host!r}. Tests must not reach the "
+                "network — a mock is missing, or is patching a name the code "
+                "under test no longer resolves to."
+            )
+        return real_connect(self, address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)
 
 
 @pytest.fixture(autouse=True)

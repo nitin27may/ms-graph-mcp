@@ -117,12 +117,53 @@ Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
 Maintainers only.
 
+Every release — candidate or real — takes the same path, and PyPI is only ever reached from the far
+end of it:
+
+```
+build ─→ testpypi ─→ verify ─┬─→ pypi (real tags only, needs approval)
+                             ├─→ ghcr
+                             └─→ github-release
+```
+
+`verify` installs the artifact back out of TestPyPI into a clean venv, imports it, and speaks
+`initialize` to the console script. A package that builds but does not install — a module missing
+from the wheel, a dependency that will not resolve, a broken entry point — fails there, before the
+version number is spent. **A PyPI version cannot be reused**, even after a yank, so the rehearsal is
+automatic rather than something to remember.
+
 1. Bump `version` in `pyproject.toml`.
 2. Move `## [Unreleased]` entries into a new version heading in `CHANGELOG.md`.
 3. Merge to `main`.
-4. Tag a release candidate — `git tag v0.2.0-rc1 && git push --tags` — which publishes to TestPyPI.
-5. Install from TestPyPI on a clean machine and verify.
-6. Tag the real release — `git tag v0.2.0 && git push --tags`.
-7. Approve the `pypi` environment in the Actions run. The publish job uses PyPI Trusted Publishing
-   (OIDC); there is no API token to manage.
+4. Tag a candidate — `git tag v0.2.0-rc1 && git push --tags`. For this, `pyproject.toml` must say
+   `0.2.0rc1`: the tag and the version are compared as PEP 440 versions, so `v0.2.0-rc1` and
+   `0.2.0rc1` match, but `v0.2.0-rc1` against a plain `0.2.0` is rejected rather than quietly
+   publishing a stable release from a candidate tag.
+5. The run stops after `verify`. Read its log — that is the rehearsal.
+6. Set `version` to `0.2.0`, then tag the real release — `git tag v0.2.0 && git push --tags`.
+7. Approve the `pypi` environment in the Actions run.
 8. Verify `uvx --from ms-graph-mcp ms-graph-mcp` from a clean machine.
+
+### One-time setup
+
+Both indexes need a **pending publisher** before the first release — the mechanism for a project
+that does not exist yet. It converts to a normal publisher on first upload.
+
+| | PyPI | TestPyPI |
+|---|---|---|
+| Form | [pypi.org/manage/account/publishing](https://pypi.org/manage/account/publishing/) | [test.pypi.org/manage/account/publishing](https://test.pypi.org/manage/account/publishing/) |
+| Project name | `ms-graph-mcp` | `ms-graph-mcp` |
+| Owner / Repository | `nitin27may` / `ms-graph-mcp` | same |
+| Workflow | `release.yml` | `release.yml` |
+| Environment | `pypi` | `testpypi` |
+
+The accounts are separate — a TestPyPI login is not a PyPI login. Without the TestPyPI publisher the
+pipeline stops at its first stage.
+
+Then create GitHub Environments `pypi` and `testpypi` under Settings → Environments, with a required
+reviewer on `pypi` only, so a real publish pauses for approval and a candidate does not.
+
+**There is no API token, and there should not be one.** Trusted Publishing exchanges a short-lived
+GitHub OIDC token for an upload credential scoped to this workflow, so nothing long-lived exists to
+leak. Note that signing in to PyPI *using* a GitHub account is unrelated and does not enable any of
+this — the pending publisher above is what matters.

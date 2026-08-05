@@ -2,15 +2,34 @@ name: Release
 
 # Tag-triggered only. Nothing here runs on a push or a pull request.
 #
-#   git tag v0.2.0-rc1 && git push --tags   → TestPyPI rehearsal
-#   git tag v0.2.0     && git push --tags   → PyPI, after environment approval
+#   git tag v0.2.0-rc1 && git push --tags   → stops after TestPyPI + verify
+#   git tag v0.2.0     && git push --tags   → continues to PyPI on approval
 #
-# Before the first real publish, the following must exist (see CONTRIBUTING.md):
-#   - a PyPI "pending publisher" for project ms-graph-mcp, owner nitin27may,
+# Every release goes through TestPyPI first, including real ones:
+#
+#   build ─→ testpypi ─→ verify ─┬─→ pypi (real tags only, needs approval)
+#                                ├─→ ghcr
+#                                └─→ github-release
+#
+# `verify` installs the artifact *back out of TestPyPI* into a clean venv and
+# runs it. That is the gate: a package that builds but does not install — a
+# missing module, a dependency that does not resolve, a broken console script —
+# fails here, before the name is spent on PyPI. A PyPI release cannot be yanked
+# and re-uploaded under the same version, so the rehearsal has to be automatic
+# rather than something a human remembers to do.
+#
+# Before the first release the following must exist (see CONTRIBUTING.md):
+#   - a PyPI "pending publisher": project ms-graph-mcp, owner nitin27may,
 #     repository ms-graph-mcp, workflow release.yml, environment pypi
-#   - GitHub Environments named `pypi` and `testpypi`
-# There is no API token to configure. Trusted Publishing exchanges a
-# short-lived GitHub OIDC token for an upload credential.
+#   - the SAME on TestPyPI, with environment testpypi. Separate account, and
+#     the pipeline stops at the first stage without it.
+#   - GitHub Environments named `pypi` and `testpypi`, with a required reviewer
+#     on `pypi` so a real publish pauses and an -rc does not.
+#
+# There is no API token or repository secret anywhere in this file, by design.
+# Trusted Publishing exchanges a short-lived GitHub OIDC token for an upload
+# credential scoped to this workflow. Signing in to PyPI *with* a GitHub
+# account is a different thing entirely and does not enable any of this.
 
 on:
   push:
@@ -28,6 +47,10 @@ jobs:
   build:
     name: build distributions
     runs-on: ubuntu-latest
+    outputs:
+      # The normalized PEP 440 version, so `verify` installs exactly what was
+      # published rather than re-deriving it from the tag and guessing wrong.
+      version: ${{ steps.version.outputs.version }}
     # Deliberately no id-token permission on this job. The build runs
     # third-party code (build backends, dependencies); if it could mint an
     # OIDC token it could mint a PyPI upload credential. Only the publish
@@ -41,20 +64,38 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      # The tag is the source of truth for the version. A tag that does not
-      # match pyproject.toml means someone forgot the version bump, and
-      # catching it here is cheaper than yanking a release.
+      # The tag and pyproject.toml must agree, or someone forgot the version
+      # bump — cheaper to catch here than to discover a release is unyankable.
+      #
+      # Compared as PEP 440 versions rather than as strings, so the git-tag
+      # convention (v0.2.0-rc1) and the Python version it normalizes to
+      # (0.2.0rc1) are recognised as the same thing. Comparing strings would
+      # either reject that pair or, worse, silently strip the suffix and
+      # publish a *stable* 0.2.0 from a tag that said release candidate.
       - name: Verify the tag matches pyproject version
+        id: version
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          TAG="${TAG%%-rc*}"
-          PROJECT=$(uv run --no-project python -c \
-            "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
-          echo "tag=$TAG pyproject=$PROJECT"
-          if [ "$TAG" != "$PROJECT" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match pyproject version $PROJECT"
-            exit 1
-          fi
+          uv run --no-project --with packaging python - "$TAG" <<'PY' >> "$GITHUB_OUTPUT"
+          import pathlib, sys, tomllib
+          from packaging.version import InvalidVersion, Version
+
+          tag_raw = sys.argv[1]
+          project_raw = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          try:
+              tag, project = Version(tag_raw), Version(project_raw)
+          except InvalidVersion as exc:
+              sys.exit(f"::error::{exc}")
+          if tag != project:
+              sys.exit(
+                  f"::error::Tag {tag_raw} (={tag}) does not match "
+                  f"pyproject version {project_raw} (={project})"
+              )
+          print(f"version={project}")
+          PY
+
+      - name: Report the version being released
+        run: echo "releasing ${{ steps.version.outputs.version }}"
 
       - run: uv build
 
@@ -82,8 +123,8 @@ jobs:
 
   testpypi:
     name: publish to TestPyPI
-    # Release candidates rehearse the pipeline before anything reaches PyPI.
-    if: contains(github.ref_name, '-rc')
+    # Unconditional. A real tag rehearses on TestPyPI exactly like a candidate
+    # does — the whole point is that the path to PyPI has been walked before.
     needs: build
     runs-on: ubuntu-latest
     environment:
@@ -101,12 +142,75 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          # Re-running a partially failed release must not die on "file already
+          # exists" for an artifact the previous attempt uploaded.
+          skip-existing: true
+
+  verify:
+    name: install from TestPyPI and run it
+    needs: [build, testpypi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # TestPyPI's index can lag the upload by a few seconds, so this retries
+      # rather than failing the release over CDN propagation.
+      #
+      # --extra-index-url is mandatory: TestPyPI does not mirror PyPI, so every
+      # real dependency (mcp, httpx, pydantic, …) has to resolve from PyPI or
+      # the install fails for reasons that have nothing to do with this package.
+      - name: Install the published artifact into a clean venv
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python -m venv /tmp/verify
+          for attempt in 1 2 3 4 5; do
+            if /tmp/verify/bin/pip install \
+                 --index-url https://test.pypi.org/simple/ \
+                 --extra-index-url https://pypi.org/simple/ \
+                 "ms-graph-mcp==${VERSION}"; then
+              echo "installed on attempt ${attempt}"
+              exit 0
+            fi
+            echo "not on the index yet; retrying in 15s"
+            sleep 15
+          done
+          echo "::error::ms-graph-mcp==${VERSION} never became installable from TestPyPI"
+          exit 1
+
+      # Proves the *installed* package works, which the build-stage smoke test
+      # cannot: it ran against a local wheel, not one that made a round trip
+      # through an index and resolved its dependencies from scratch.
+      - name: Exercise the installed package
+        run: |
+          /tmp/verify/bin/python - <<'PY'
+          from ms_graph_mcp.allowlists import (
+              resolve_read_tools, resolve_write_tools, resolve_internal_tools,
+          )
+          read, write, internal = (
+              resolve_read_tools(), resolve_write_tools(), resolve_internal_tools(),
+          )
+          print(f"read={len(read)} write={len(write)} internal={len(internal)}")
+          assert read and write and internal
+          PY
+          test -x /tmp/verify/bin/ms-graph-mcp
+          test -x /tmp/verify/bin/ms-graph-mcp-http
+
+      # Speaks MCP over stdio and returns a well-formed initialize result —
+      # the console script actually runs, rather than merely existing.
+      - name: Speak the protocol to it
+        run: |
+          REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
+          echo "$REQ" | timeout 30 /tmp/verify/bin/ms-graph-mcp 2>/dev/null \
+            | head -1 | python -c 'import json,sys; r=json.load(sys.stdin); assert r["result"]["serverInfo"]["name"]; print("initialize OK:", r["result"]["protocolVersion"])'
 
   pypi:
     name: publish to PyPI
-    # Real releases only — an -rc tag stops at TestPyPI.
+    # Real releases only — an -rc tag stops after verify.
     if: "!contains(github.ref_name, '-rc')"
-    needs: build
+    needs: verify
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -126,7 +230,7 @@ jobs:
 
   github-release:
     name: create GitHub release
-    needs: build
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -149,5 +253,56 @@ jobs:
             --generate-notes \
             $PRERELEASE
 
-  # The container image job lands alongside the Dockerfile. Adding it here
-  # before that file exists would fail the first tagged release.
+  ghcr:
+    name: publish container image
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      # For the build provenance attestation below.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # GITHUB_TOKEN is scoped to this repository and expires with the job, so
+      # GHCR needs no stored credential of its own.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          # `latest` only on a real release — an -rc tag must never become the
+          # tag people pull by default.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-rc') }}
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-rc') }}
+
+      - id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Lets a consumer verify the image was built by this workflow from this
+      # commit, rather than pushed by hand to the same name.
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

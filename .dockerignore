@@ -1,0 +1,30 @@
+# Keep the build context small and, more importantly, keep local secrets and
+# caches out of it. Anything sent to the daemon can end up in a layer.
+
+.git
+.github
+.venv
+venv
+.vscode
+.idea
+
+__pycache__
+*.py[cod]
+.pytest_cache
+.ruff_cache
+.mypy_cache
+*.egg-info
+dist
+build
+
+# Local configuration and credentials. .vscode/mcp.json in particular holds real
+# tenant and client ids, and the token cache holds live refresh tokens.
+.env
+.env.*
+*.local
+.ms-graph-mcp
+
+tests
+docs
+*.md
+!README.md

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/nitin27may/ms-graph-mcp/blob/main/LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 85
@@ -62,7 +62,7 @@ Then, on the new app:
   ```
 
   The complete, copy-paste consent set — and which permission each individual tool needs — is in
-  [docs/permissions.md](docs/permissions.md).
+  [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md).
 
 Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
 
@@ -214,7 +214,7 @@ doing before blaming your client.
 > server with *no* client id and it falls back to defaults. The `-e` flags go **after** the server
 > command.
 
-There is a scriptable `--cli` mode too — see [docs/testing.md](docs/testing.md).
+There is a scriptable `--cli` mode too — see [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md).
 
 ### Two things that catch people out
 
@@ -395,7 +395,7 @@ belongs, because the server is a confidential client running somewhere you contr
 
 **`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity —
 with it off, token signatures are not verified. There is deliberately no setting that skips
-authentication altogether; see [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md).
+authentication altogether; see [ADR 0003](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/adr/0003-no-gateway-trust-mode.md).
 
 #### Set `GRAPH_MCP_RESOURCE_URL` when you deploy behind a proxy
 
@@ -425,6 +425,35 @@ cover — a split-horizon DNS name, a service-mesh address, a second domain.
 > thing to go wrong on a first hosted deployment. Set `GRAPH_MCP_RESOURCE_URL` to the URL clients
 > actually connect to.
 
+#### Docker
+
+The image serves the **HTTP transport only**. stdio speaks JSON-RPC over the process's own
+stdin/stdout, so a client has to spawn it directly — wrapping that in `docker run` gains nothing and
+breaks the interactive sign-in.
+
+```bash
+docker run --rm -p 8094:8094 \
+  -e GRAPH_MCP_CLIENT_ID=<application-client-id> \
+  -e GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
+  -e GRAPH_MCP_RESOURCE_URL=https://graph-mcp.example.com/mcp \
+  ghcr.io/nitin27may/ms-graph-mcp:latest
+```
+
+Published to GHCR on each release for `linux/amd64` and `linux/arm64`, with build provenance
+attestations. Runs as a non-root user (uid 10001) that cannot write to its own virtualenv, and
+carries a `HEALTHCHECK` against `/health` — which is unauthenticated and does not touch Graph, so a
+healthy container means the process is serving, not that Entra is reachable.
+
+Sensible resource limits for a single replica; the process is I/O-bound on Graph, not CPU-bound:
+
+```yaml
+resources:
+  requests: { cpu: 50m,  memory: 128Mi }
+  limits:   { cpu: 500m, memory: 512Mi }
+```
+
+Build it yourself with `docker build -t ms-graph-mcp .`.
+
 **Dynamic client registration is not available.** Entra ID does not implement RFC 7591, so a client
 cannot register itself from the discovery metadata alone. Clients need a pre-registered app id —
 either yours, or their own with your API added as a permission. This is an Entra limitation, not
@@ -442,7 +471,7 @@ something this server can work around.
 
 `GRAPH_MCP_READ_ONLY` is stronger than leaving `GRAPH_MCP_WRITE_SCOPE` off: it removes the write
 tools from the deployment entirely, so no caller can reach them whatever they ask for. See
-[SECURITY.md](SECURITY.md) for what to change before exposing this beyond localhost.
+[SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) for what to change before exposing this beyond localhost.
 
 ## Toolset profiles
 
@@ -512,15 +541,15 @@ server refuses to serve a partial surface instead of silently dropping a tool.
 
 | | |
 |---|---|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Dev setup, the add-a-tool checklist, and the invariants that are enforced by tests |
-| [SECURITY.md](SECURITY.md) | Reporting vulnerabilities, and the settings to change before exposing this beyond localhost |
-| [CHANGELOG.md](CHANGELOG.md) | Release history |
-| [CLAUDE.md](CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
-| [docs/permissions.md](docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
-| [docs/graph-coverage.md](docs/graph-coverage.md) | What this server covers of the Graph v1.0 surface, what it does not, and what is out of scope |
-| [docs/testing.md](docs/testing.md) | Running the suite, how it is arranged, and driving the server with MCP Inspector |
-| [docs/debugging.md](docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
-| [docs/adr/](docs/adr/) | Architecture Decision Records |
+| [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) | Dev setup, the add-a-tool checklist, and the invariants that are enforced by tests |
+| [SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) | Reporting vulnerabilities, and the settings to change before exposing this beyond localhost |
+| [CHANGELOG.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CHANGELOG.md) | Release history |
+| [CLAUDE.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
+| [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
+| [docs/graph-coverage.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/graph-coverage.md) | What this server covers of the Graph v1.0 surface, what it does not, and what is out of scope |
+| [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md) | Running the suite, how it is arranged, and driving the server with MCP Inspector |
+| [docs/debugging.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
+| [docs/adr/](https://github.com/nitin27may/ms-graph-mcp/tree/main/docs/adr/) | Architecture Decision Records |
 
 ## Development
 
@@ -531,7 +560,7 @@ uv run ruff check .
 uv run ruff format .
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request — the tool allowlists and the
+See [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) before opening a pull request — the tool allowlists and the
 tier separation have invariants that are enforced rather than advisory.
 
 ## Roadmap
@@ -556,9 +585,9 @@ Tracked in more detail in the issues. The near-term programme:
 
 ## Contributing
 
-Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md); participation is
-governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md); participation is
+governed by the [Code of Conduct](https://github.com/nitin27may/ms-graph-mcp/blob/main/CODE_OF_CONDUCT.md).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/nitin27may/ms-graph-mcp/blob/main/LICENSE).
