@@ -1,0 +1,94 @@
+name: Prepare release
+
+# Opens a pull request that bumps the version and rolls the changelog. It does
+# not tag and it does not publish — `release.yml` does that, and only from a
+# `v*` tag you push yourself.
+#
+# Run it from Actions → Prepare release → Run workflow, with the version you
+# want. Then review the PR, merge it, and tag:
+#
+#     git tag v0.2.0 && git push --tags
+#
+# Deliberately a pull request rather than a push to main. The diff is two files
+# and takes ten seconds to read, and the alternative is a bot commit that
+# silently decides what the next release is called. The version number is the
+# one thing in a release that cannot be corrected afterwards — PyPI will not let
+# a version be reused, even after a yank.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version, PEP 440 (0.2.0, 0.3.0rc1). Prereleases leave the changelog alone."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    name: open the release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Bump the version and roll the changelog
+        id: prep
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          uv run --no-project --with packaging python scripts/prepare_release.py "$VERSION"
+          # Read back what actually landed rather than echoing the input: the
+          # script normalizes (0.2.0-rc1 -> 0.2.0rc1), and the tag has to match
+          # what release.yml will compare against.
+          NORMALIZED=$(uv run --no-project python -c \
+            "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          echo "version=$NORMALIZED" >> "$GITHUB_OUTPUT"
+
+      # The suite has to pass on the bumped tree, not just on main. The
+      # deprecation register is version-aware, so a bump can legitimately fail
+      # here — that is the register doing its job, telling you something was
+      # promised for removal in the version you are about to cut.
+      - name: Verify the bumped tree
+        run: |
+          uv sync --locked
+          uv run pytest -q
+          uv run ruff check --no-fix .
+          uv run ruff format --check .
+
+      - name: Open the pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: release/v${{ steps.prep.outputs.version }}
+          title: "Release ${{ steps.prep.outputs.version }}"
+          commit-message: "Prepare release ${{ steps.prep.outputs.version }}"
+          body: |
+            Prepares **${{ steps.prep.outputs.version }}**.
+
+            - `pyproject.toml` bumped
+            - `CHANGELOG.md` rolled, unless this is a prerelease
+
+            Tests, lint and formatting passed on this tree, and the deprecation
+            register was checked against the new version.
+
+            After merging:
+
+            ```bash
+            git tag v${{ steps.prep.outputs.version }} && git push --tags
+            ```
+
+            That tag runs `release.yml`: build → TestPyPI → verify. A stable
+            version then waits for approval on the `pypi` environment; a
+            release candidate stops after verify.
+          labels: release
+          delete-branch: true

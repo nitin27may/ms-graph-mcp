@@ -113,9 +113,55 @@ Write the subject and body, then stop.
 
 Do not open a public issue. See [SECURITY.md](SECURITY.md).
 
+## Deprecation policy
+
+Anything a user's configuration or code can name is covered: tool names, environment variables,
+header names, error codes, and defaults.
+
+**Nothing is ever removed in a patch release.** Someone taking `0.2.0` → `0.2.1` for a bug fix must
+not find working code broken underneath them.
+
+**A deprecation lasts at least one release cycle.** Pre-1.0 that means one minor version — deprecate
+in `0.2.0`, remove no earlier than `0.3.0`. Post-1.0, removals wait for the next major. Anyone who
+upgrades every other release should never be surprised.
+
+While deprecated, the old thing **keeps working**:
+
+- Renamed tools register the old name via `aliases=("old_name",)`. `tools/list` advertises only the
+  canonical name — so deprecated names cost no context — while `tools/call` still honours the old
+  one and logs a deprecation warning.
+- The CHANGELOG gets a `Deprecated` section naming the replacement and the removal version.
+- The entry goes in [`src/ms_graph_mcp/deprecations.py`](src/ms_graph_mcp/deprecations.py).
+
+That last step is what makes the promise real. `tests/test_deprecations.py` **fails the build once
+the package version reaches a `remove_in`**, comparing on the release tuple so entering the `0.4.0`
+cycle — `0.4.0rc1` — already counts as due. Removal then becomes a deliberate edit rather than
+something dependent on memory, and pushing a date back is allowed as long as somebody decides to.
+
+Currently registered: the 51 pre-namespace tool aliases, removal due in `0.4.0`.
+
 ## Releasing
 
 Maintainers only.
+
+### Preparing the version
+
+Use **Actions → Prepare release → Run workflow** with the new version. It bumps `pyproject.toml`,
+rolls `## [Unreleased]` into a dated section, updates the changelog link definitions, runs the full
+suite on the bumped tree, and opens a pull request.
+
+It deliberately opens a PR rather than pushing to `main`. The diff is two files, and the version
+number is the one part of a release that cannot be corrected afterwards — PyPI will not let a
+version be reused, even after a yank.
+
+A prerelease bumps the version but leaves `## [Unreleased]` alone: a candidate is a rehearsal, and
+cutting a dated section for it would strand the entries under a version nobody installs.
+
+The script runs standalone too:
+
+```bash
+uv run python scripts/prepare_release.py 0.3.0
+```
 
 Every release — candidate or real — takes the same path, and PyPI is only ever reached from the far
 end of it:
@@ -132,17 +178,16 @@ from the wheel, a dependency that will not resolve, a broken entry point — fai
 version number is spent. **A PyPI version cannot be reused**, even after a yank, so the rehearsal is
 automatic rather than something to remember.
 
-1. Bump `version` in `pyproject.toml`.
-2. Move `## [Unreleased]` entries into a new version heading in `CHANGELOG.md`.
-3. Merge to `main`.
-4. Tag a candidate — `git tag v0.2.0-rc1 && git push --tags`. For this, `pyproject.toml` must say
+1. Run **Prepare release** with the candidate version and merge the PR it opens.
+2. Tag a candidate — `git tag v0.2.0-rc1 && git push --tags`. For this, `pyproject.toml` must say
    `0.2.0rc1`: the tag and the version are compared as PEP 440 versions, so `v0.2.0-rc1` and
    `0.2.0rc1` match, but `v0.2.0-rc1` against a plain `0.2.0` is rejected rather than quietly
    publishing a stable release from a candidate tag.
-5. The run stops after `verify`. Read its log — that is the rehearsal.
-6. Set `version` to `0.2.0`, then tag the real release — `git tag v0.2.0 && git push --tags`.
-7. Approve the `pypi` environment in the Actions run.
-8. Verify `uvx --from ms-graph-mcp ms-graph-mcp` from a clean machine.
+3. The run stops after `verify`. Read its log — that is the rehearsal.
+4. Run **Prepare release** again with the stable version, merge, then
+   `git tag v0.2.0 && git push --tags`.
+5. Approve the `pypi` environment in the Actions run.
+6. Verify `uvx --from ms-graph-mcp ms-graph-mcp` from a clean machine.
 
 ### One-time setup
 

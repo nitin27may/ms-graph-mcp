@@ -121,3 +121,47 @@ jobs:
           name: dist-${{ github.sha }}
           path: dist/
           retention-days: 7
+
+
+  changelog:
+    name: changelog entry
+    # Pull requests only: a direct push to main has no PR to annotate, and a
+    # release-prep branch rewrites the changelog wholesale by design.
+    #
+    # The `no-changelog` label is checked here rather than inside the script,
+    # because a step that has already failed cannot be rescued by a later one —
+    # the job fails regardless of what runs after it.
+    if: >-
+      github.event_name == 'pull_request'
+      && !startsWith(github.head_ref, 'release/')
+      && !contains(github.event.pull_request.labels.*.name, 'no-changelog')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A version mismatch is already caught at tag time by release.yml. The gap
+      # this closes is the other one: a behaviour change shipping with nothing
+      # written down, which nobody notices until someone asks what changed
+      # between two releases.
+      - name: Require a changelog entry when src/ changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          CHANGED=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Files changed:"
+          echo "$CHANGED"
+
+          if ! echo "$CHANGED" | grep -q '^src/'; then
+            echo "No changes under src/ — nothing to record."
+            exit 0
+          fi
+          if echo "$CHANGED" | grep -q '^CHANGELOG.md$'; then
+            echo "src/ changed and CHANGELOG.md was updated."
+            exit 0
+          fi
+
+          echo "::error::This PR changes src/ but not CHANGELOG.md. Add an entry under '## [Unreleased]', or apply the 'no-changelog' label if it genuinely needs none — a pure refactor, a comment fix."
+          exit 1
