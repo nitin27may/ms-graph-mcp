@@ -172,6 +172,16 @@ build ─→ testpypi ─→ verify ─┬─→ pypi (real tags only, needs app
                              └─→ github-release
 ```
 
+**Candidates are published to PyPI as well**, once a stable release exists. pip skips pre-releases
+unless the user passes `--pre` or pins the version exactly, so a candidate is invisible to ordinary
+installs while still being available to anyone who wants it — which beats sending people to
+TestPyPI, a sandbox for the publishing process rather than a distribution channel.
+
+The exception, enforced by the `gate` step in `build`: that protection only holds once a stable
+release exists. A pre-release published as the *only* version on the index **is** installed by a
+plain `pip install`, so a candidate cannot reach PyPI until a stable version is there to shadow it.
+The step checks the live index rather than trusting the tag.
+
 `verify` installs the artifact back out of TestPyPI into a clean venv, imports it, and speaks
 `initialize` to the console script. A package that builds but does not install — a module missing
 from the wheel, a dependency that will not resolve, a broken entry point — fails there, before the

@@ -134,6 +134,12 @@ change between minor versions; breaking changes are called out explicitly.
   into a clean environment and runs it. Previously a real tag went straight to PyPI having never
   touched TestPyPI.
 
+- Release candidates are published to PyPI as well as TestPyPI, once a stable release exists —
+  `pip install --pre ms-graph-mcp`, or an exact pin. pip skips pre-releases otherwise, so a
+  candidate never reaches anyone who did not ask for one. A `gate` step blocks a candidate from
+  reaching PyPI *before* the first stable release, where being the only version on the index would
+  make a plain `pip install` resolve to it.
+
 ### Fixed
 
 - **The HTTP transport rejected its own public hostname.** The MCP SDK keys DNS-rebinding

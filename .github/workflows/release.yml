@@ -51,6 +51,8 @@ jobs:
       # The normalized PEP 440 version, so `verify` installs exactly what was
       # published rather than re-deriving it from the tag and guessing wrong.
       version: ${{ steps.version.outputs.version }}
+      # Whether this release may go to PyPI at all. See the gate step below.
+      publish_to_pypi: ${{ steps.gate.outputs.publish }}
     # Deliberately no id-token permission on this job. The build runs
     # third-party code (build backends, dependencies); if it could mint an
     # OIDC token it could mint a PyPI upload credential. Only the publish
@@ -96,6 +98,57 @@ jobs:
 
       - name: Report the version being released
         run: echo "releasing ${{ steps.version.outputs.version }}"
+
+      # Release candidates belong on PyPI — pip excludes prereleases by
+      # default, so `pip install ms-graph-mcp` keeps resolving to the newest
+      # stable while anyone who wants the candidate asks for it with `--pre` or
+      # an exact pin. That is how numpy, Django and pip itself ship theirs, and
+      # it beats sending people to TestPyPI, which is a sandbox for testing the
+      # publishing process rather than a distribution channel.
+      #
+      # With one exception, which this step exists to enforce: that protection
+      # only holds once a stable release exists. When a prerelease is the *only*
+      # version on the index, pip installs it with no --pre and no pin —
+      # verified, not assumed. Publishing a candidate before the first stable
+      # release would therefore hand a release candidate to the very first
+      # person who typed `pip install ms-graph-mcp`.
+      - name: Decide whether this may go to PyPI
+        id: gate
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          uv run --no-project --with packaging python - "$VERSION" <<'PY' >> "$GITHUB_OUTPUT"
+          import json, sys, urllib.error, urllib.request
+          from packaging.version import Version
+
+          version = Version(sys.argv[1])
+          if not version.is_prerelease:
+              print("publish=true")
+              sys.exit()
+
+          try:
+              with urllib.request.urlopen(
+                  "https://pypi.org/pypi/ms-graph-mcp/json", timeout=30
+              ) as response:
+                  releases = json.load(response)["releases"]
+          except urllib.error.HTTPError as exc:
+              if exc.code != 404:
+                  raise
+              releases = {}
+
+          # A version with no files is a yanked-empty placeholder, not a release.
+          stable = [v for v, files in releases.items() if files and not Version(v).is_prerelease]
+          if stable:
+              print("publish=true")
+          else:
+              print("publish=false")
+              print(
+                  "::notice::Skipping PyPI: no stable release exists yet, and a "
+                  "prerelease published as the only version would be installed by "
+                  "a plain `pip install`. Ship a stable release first.",
+                  file=sys.stderr,
+              )
+          PY
 
       - run: uv build
 
@@ -202,15 +255,20 @@ jobs:
       # the console script actually runs, rather than merely existing.
       - name: Speak the protocol to it
         run: |
-          REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-28","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
+          # 2025-11-25 is LATEST_HANDSHAKE_VERSION: `initialize` is the legacy
+          # handshake and cannot negotiate the modern 2026-07-28 revision, which
+          # clients reach by another path. Asking for 2026-07-28 here would make
+          # a correct reply look like a silent downgrade in the log.
+          REQ='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
           echo "$REQ" | timeout 30 /tmp/verify/bin/ms-graph-mcp 2>/dev/null \
-            | head -1 | python -c 'import json,sys; r=json.load(sys.stdin); assert r["result"]["serverInfo"]["name"]; print("initialize OK:", r["result"]["protocolVersion"])'
+            | head -1 | python -c 'import json,sys; r=json.load(sys.stdin); assert r["result"]["serverInfo"]["name"]; print("handshake OK:", r["result"]["protocolVersion"])'
 
   pypi:
     name: publish to PyPI
-    # Real releases only — an -rc tag stops after verify.
-    if: "!contains(github.ref_name, '-rc')"
-    needs: verify
+    # Stable releases always; candidates only once a stable exists to shadow
+    # them. Decided in `build`, because a job-level `if` cannot query PyPI.
+    if: needs.build.outputs.publish_to_pypi == 'true'
+    needs: [build, verify]
     runs-on: ubuntu-latest
     environment:
       name: pypi

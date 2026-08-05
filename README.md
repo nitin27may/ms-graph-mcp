@@ -32,6 +32,32 @@ secret.
 
 Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
 
+### Trying a pre-release
+
+Release candidates are tagged in this repository, so you can run one directly without waiting for a
+PyPI release and without a TestPyPI account:
+
+```bash
+uvx --from git+https://github.com/nitin27may/ms-graph-mcp@v0.2.0-rc1 ms-graph-mcp
+pip install git+https://github.com/nitin27may/ms-graph-mcp@v0.2.0-rc1
+```
+
+Once the first stable version is on PyPI, candidates are published there too and the usual
+pre-release flags work:
+
+```bash
+pip install --pre ms-graph-mcp        # newest, including candidates
+pip install ms-graph-mcp==0.2.0rc1    # a specific one; no --pre needed for an exact pin
+```
+
+A candidate never reaches anyone who did not ask for one — pip skips pre-releases unless you pass
+`--pre` or pin the version exactly.
+
+**TestPyPI is not the place to get these.** Every release is published there first, but that is a
+rehearsal of the publishing process, not a distribution channel: it can be wiped without notice, and
+it does not mirror PyPI, so installing from it needs `--extra-index-url https://pypi.org/simple/`
+just to resolve ordinary dependencies. Use a git tag, or `--pre`.
+
 ## Quick start
 
 You need an **Entra ID app registration** — about two minutes. **Do not create a client secret:**
