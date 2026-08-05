@@ -36,7 +36,7 @@ dependencies = [
     # mcp 2.0 requires starlette 1.x. BaseHTTPMiddleware, which the auth layer
     # subclasses, is unchanged across that major.
     "starlette>=1.0,<2.0",
-    "uvicorn[standard]>=0.34.0",
+    "uvicorn[standard]>=0.52.1",
     "anyio>=4.0",
     # Confidential-client on-behalf-of / client-credentials exchange. Only used when
     # the server performs its own OBO (GRAPH_MCP_DOES_OBO=true); small and pure-Python.
