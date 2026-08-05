@@ -164,13 +164,26 @@ Security invariants — do not relax these to make something work:
 
 ## Auth postures
 
-Selected by `GRAPH_MCP_DOES_OBO` in `config.py:125-153`:
+Selected by `GRAPH_MCP_DOES_OBO`. **This is an HTTP-transport setting — it has no meaning for
+stdio**, and that is structural, not incidental. See [ADR 0004](docs/adr/0004-resource-server-by-default.md).
 
-- **Interim (default)** — the caller forwards an already-OBO'd Graph token. Validated for the Graph
-  audience plus `azp == our client_id`, so only OBO tokens minted by this registration are accepted.
-- **Resource server** (`mcp_does_obo=true`) — the inbound token is audienced to this MCP. Audience
-  binding is the gate, so the azp check is dropped, and `server.py:197` exchanges the token via
-  `obo.py` (MSAL) before the tool runs.
+- **Resource server (default)** — the inbound token is audienced to this MCP. Audience binding is
+  the gate; `azp` is opt-in defence in depth via `GRAPH_MCP_ALLOWED_AZP`. `auth.py` exchanges the
+  token via `obo.py` (MSAL) **in the middleware**, before dispatch runs.
+- **Passthrough** (`mcp_does_obo=false`, deprecated, removal in 1.0) — the caller forwards an
+  already-exchanged Graph token. Validated for the Graph audience plus `azp == our client_id`,
+  because a Graph audience alone is generic across every app in the tenant.
+
+**The exchange must stay out of `server.py`.** It used to live in `dispatch_graph_tool`, which both
+transports share, so `mcp_does_obo=true` under stdio tried to redeem a token that is *already* a
+Graph token — Entra refuses ("Applications can't redeem a token for a different app") and every
+local client breaks on its first tool call. It also has to sit on the HTTP edge because a
+Conditional Access claims challenge is only actionable as a `401` with `WWW-Authenticate`, which
+dispatch cannot produce. `tests/test_stdio_unaffected.py` holds both lines.
+
+**Authorization is `scp`, not the `X-Write-Scope` header.** The header is caller-asserted, so it can
+only narrow. With `GRAPH_MCP_WRITE_SCOPE_NAME` set, the token's delegated scopes decide. Configuring
+any scope gate forces signature verification on — a forgeable gate is worse than none.
 
 `src/ms_graph_mcp/entra/` is a vendored, self-contained auth toolkit running in
 `AuthMode.DOWNSTREAM_SERVICE`. It has its own `tests/entra/conftest.py` with a real generated RS256

@@ -74,10 +74,16 @@ belongs, because the server is a confidential client running somewhere you contr
 |---|---|---|
 | Verify JWT signatures against JWKS | `GRAPH_MCP_JWT_VERIFY` | `true` |
 | Shared secret for machine callers | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) |
-| Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `false` |
-| Client secret, for the OBO exchange | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
-| Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
+| Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | **`true`** |
+| Certificate (PEM bundle) for the exchange | `GRAPH_MCP_CLIENT_CERT_PATH` | `""` |
+| Certificate passphrase | `GRAPH_MCP_CLIENT_CERT_PASSWORD` | `""` |
+| Federated token file (workload identity) | `GRAPH_MCP_FEDERATED_TOKEN_FILE` / `AZURE_FEDERATED_TOKEN_FILE` | `""` |
+| Client secret, for the exchange | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
+| Audience to validate | `GRAPH_MCP_AUDIENCE` | derived from client id |
 | Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `https://graph.microsoft.com/.default` |
+| Permitted calling applications (`azp`) | `GRAPH_MCP_ALLOWED_AZP` | `""` (audience is the gate) |
+| Delegated scope required to call at all | `GRAPH_MCP_REQUIRED_SCOPE` | `""` (no gate) |
+| Delegated scope required for write tools | `GRAPH_MCP_WRITE_SCOPE_NAME` | `""` (header only) |
 | HTTP port | `GRAPH_MCP_PORT` | `8094` |
 | Public URL, enabling OAuth discovery | `GRAPH_MCP_RESOURCE_URL` | `""` (discovery off) |
 | Additional accepted `Host` values | `GRAPH_MCP_ALLOWED_HOSTS` | `""` |
@@ -85,20 +91,62 @@ belongs, because the server is a confidential client running somewhere you contr
 `GRAPH_MCP_CLIENT_ID` and `GRAPH_MCP_TENANT_ID` are needed in both shapes.
 
 > **`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity
-> — with it off, token signatures are not verified. There is deliberately no setting that skips
-> authentication altogether; see [ADR 0003](adr/0003-no-gateway-trust-mode.md).
+> — with it off, token *signatures* are not verified. The audience gate still runs: it needs no
+> signing key, and it is what stops a token minted for another service being accepted here. There is
+> deliberately no setting that skips authentication altogether; see
+> [ADR 0003](adr/0003-no-gateway-trust-mode.md).
 
 ### The two auth postures
 
-Selected by `GRAPH_MCP_DOES_OBO`:
+Selected by `GRAPH_MCP_DOES_OBO`. **This is an HTTP-transport setting and has no effect on stdio**,
+where the server signs the user in directly and there is nothing to exchange.
 
-- **Interim (default).** The caller forwards an already-OBO'd Graph token. It is validated for the
-  Graph audience *plus* `azp == our client_id`, so only OBO tokens minted by this registration are
-  accepted — a Graph token on its own is generic across apps and would otherwise be enough.
-- **Resource server** (`GRAPH_MCP_DOES_OBO=true`). The inbound token is audienced to this MCP.
-  Audience binding is the gate, so the `azp` check is dropped, and the server exchanges the token for
-  a Graph token via the on-behalf-of flow before the tool runs. This is the posture that needs
-  `GRAPH_MCP_CLIENT_SECRET`.
+- **Resource server (default).** The inbound token is audienced to this MCP. Audience binding is the
+  gate, and the server exchanges the token for a Graph token via the on-behalf-of flow before the
+  tool runs. Needs a confidential-client credential — see below. This is the posture the MCP
+  authorization specification describes, and the one an agent should use.
+- **Passthrough** (`GRAPH_MCP_DOES_OBO=false`, **deprecated**, removal in 1.0). The caller forwards
+  an already-exchanged Graph token, validated for the Graph audience *plus* `azp == our client_id`.
+  It is deprecated because a Graph-audienced token was not issued for this server, which the spec
+  requires rejecting, and because a relayed token cannot satisfy Conditional Access claim step-up.
+  See [ADR 0004](adr/0004-resource-server-by-default.md).
+
+[agent-auth.md](agent-auth.md) walks through the app registrations, scopes and consent the default
+posture needs.
+
+### Credentials for the exchange
+
+Precedence is **certificate → federated → secret**, so a leftover secret in the environment cannot
+outrank a certificate configured deliberately.
+
+| Setting | Use |
+|---|---|
+| `GRAPH_MCP_CLIENT_CERT_PATH` | Production. PEM bundle: `openssl pkcs12 -in file.pfx -out file.pem -nodes` |
+| `GRAPH_MCP_FEDERATED_TOKEN_FILE` | AKS workload identity. Re-read per exchange, so rotation needs no restart |
+| `GRAPH_MCP_CLIENT_SECRET` | Development. Warns at startup |
+
+Microsoft's guidance is that client secrets "shouldn't be used as client credentials in production
+environments". **The HTTP transport refuses to start** in resource-server mode with no credential,
+rather than failing later on an arbitrary tool call.
+
+### Binding the tool surface to token scopes
+
+Audience binding proves a token was issued for this server. It says nothing about what its bearer
+was granted, so without a scope gate any correctly-audienced token reaches everything.
+
+```
+GRAPH_MCP_REQUIRED_SCOPE=access_as_user
+GRAPH_MCP_WRITE_SCOPE_NAME=access_as_user.write
+```
+
+With the second set, write access becomes `X-Write-Scope: true` **AND** the write scope present in
+the token's `scp`. The header can then only narrow — an agent that was never granted the scope
+cannot reach `mail_send` however it sets its headers. Left unset, the header alone decides, which is
+the previous behaviour and why it is the default for now; the defaults become non-empty in 0.5.0.
+
+Configuring either gate forces signature verification on, regardless of `GRAPH_MCP_JWT_VERIFY` — an
+authorization check over an unverified token is forgeable, and a forgeable gate is worse than none
+because it reads as protection.
 
 ---
 

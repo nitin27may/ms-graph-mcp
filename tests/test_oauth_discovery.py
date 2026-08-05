@@ -36,6 +36,12 @@ def _config(**overrides) -> GraphMcpConfig:
     base = {
         "_env_file": None,
         "tenant_id": TENANT,
+        "client_id": "mcp-client-id",
+        # The default posture is resource server, which build_app() refuses to
+        # start without a confidential-client credential. These tests are about
+        # discovery rather than auth, but they should still run against the
+        # posture a real deployment gets.
+        "client_secret": "s3cret",
         "shared_secret": "s3cret",
         "resource_url": RESOURCE_URL,
     }

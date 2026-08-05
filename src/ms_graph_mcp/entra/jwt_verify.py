@@ -7,7 +7,14 @@ Two paths, switched by ``AuthConfig.verify_signature``:
      issuer against the v1 + v2 tenant URLs ourselves (PyJWT's exact-match
      ``issuer=`` is brittle across token versions / trailing slashes).
   2. **Unverified** (local dev only): decode without signature, still enforce
-     expiry + issuer. Never reachable when a role gate is configured.
+     **audience**, expiry and issuer. Never reachable when a role or scope gate
+     is configured.
+
+Turning off signature verification narrows *one* check. It must not silently
+drop the audience gate too: validating ``aud`` needs no signing key, and it is
+the confused-deputy mitigation the MCP authorization spec requires on every
+request. Without it, a token minted for Microsoft Graph — or for any other
+service in the tenant — would be accepted here.
 
 ID tokens (those carrying a ``nonce``) are always rejected — only access tokens
 may be presented to a service.
@@ -87,6 +94,17 @@ def _decode_unverified(token: str, cfg: AuthConfig) -> dict:
     exp = payload.get("exp")
     if exp and time.time() > float(exp) + cfg.clock_skew_seconds:
         raise InvalidTokenError("token expired")
+
+    # Audience is enforced on this path too. It costs nothing without the key,
+    # and skipping it would mean a token issued for another service — Graph, say
+    # — was accepted here purely because signature checking was off for local
+    # development. `aud` may be a string or a list.
+    audiences = cfg.audience_list
+    if audiences:
+        claimed = payload.get("aud", "")
+        claimed_set = {claimed} if isinstance(claimed, str) else set(claimed or ())
+        if not claimed_set & set(audiences):
+            raise InvalidTokenError("audience mismatch")
 
     issuers = cfg.effective_issuers
     iss = payload.get("iss", "")

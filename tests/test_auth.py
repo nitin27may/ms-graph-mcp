@@ -1,6 +1,12 @@
 """Service auth (GraphMcpAuthMiddleware over ms_graph_mcp.entra, DOWNSTREAM).
 
-Tool calls present the OBO Graph token in Authorization (validated + azp-checked);
+These cover the **passthrough** posture, where the caller forwards an
+already-OBO'd Graph token and the server validates the Graph audience plus
+``azp``. It is no longer the default — see ``tests/test_obo_posture.py`` for the
+resource-server posture that is — so the config below sets it explicitly rather
+than relying on a default that has moved.
+
+Tool calls present the Graph token in Authorization (validated + azp-checked);
 no-user hydration calls present the shared secret (machine bypass). jwt_verify is
 off here (the signature path is covered by tests/entra/test_jwt_verify.py) so these
 focus on the middleware wiring: bypass, azp gate, and the request-context dict.
@@ -18,7 +24,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from ms_graph_mcp.auth import GraphMcpAuthMiddleware
-from ms_graph_mcp.config import GRAPH_AUDIENCE, GraphMcpConfig
+from ms_graph_mcp.config import GRAPH_AUDIENCE, GraphMcpConfig, set_config
 from ms_graph_mcp.context import current_request_context
 
 SECRET = "graph-mcp-fleet-secret-long-enough-value"
@@ -26,10 +32,20 @@ TENANT = "tenant-1"
 CLIENT = "our-app-client-id"
 
 
-def _cfg():
+def _graph_mcp_config() -> GraphMcpConfig:
+    """Passthrough posture, stated explicitly — the default is now the other one."""
     return GraphMcpConfig(
-        shared_secret=SECRET, tenant_id=TENANT, client_id=CLIENT, jwt_verify=False
-    ).to_auth_config()
+        _env_file=None,
+        shared_secret=SECRET,
+        tenant_id=TENANT,
+        client_id=CLIENT,
+        jwt_verify=False,
+        mcp_does_obo=False,
+    )
+
+
+def _cfg():
+    return _graph_mcp_config().to_auth_config()
 
 
 def _mint(**claims) -> str:
@@ -54,6 +70,11 @@ def _mint(**claims) -> str:
 
 
 def _build_app() -> Starlette:
+    # The middleware takes an AuthConfig for token validation but reads the
+    # package config for the posture, so both have to say passthrough or the
+    # request reaches an OBO exchange these tests are not about.
+    set_config(_graph_mcp_config())
+
     async def health(request):
         return JSONResponse({"ok": True})
 

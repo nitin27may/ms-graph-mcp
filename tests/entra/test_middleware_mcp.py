@@ -100,3 +100,47 @@ def test_real_app_only_token_accepted_when_explicitly_allowed(make_token, patche
     with TestClient(_app(cfg)) as client:
         resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
     assert resp.status_code == 200
+
+
+# ── Delegated-scope gate ──────────────────────────────────────────────────────
+#
+# Audience binding proves a token was minted for this service. It says nothing
+# about what its bearer was granted, so without a `scp` check any client able to
+# obtain a correctly-audienced token reached the entire surface. These run
+# against real RS256 signatures because a configured scope gate forces
+# verification on — an authorization check over an unverified token is
+# forgeable, and a forgeable gate is worse than none.
+
+
+def test_missing_required_scope_is_403(make_token, patched_jwks):
+    cfg = _mcp_cfg(required_scopes="access_as_user")
+    tok = make_token(aud=GRAPH_AUD, scp="something.else")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 403
+
+
+def test_present_required_scope_is_admitted(make_token, patched_jwks):
+    cfg = _mcp_cfg(required_scopes="access_as_user")
+    tok = make_token(aud=GRAPH_AUD, scp="access_as_user")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 200
+
+
+def test_every_required_scope_must_be_present(make_token, patched_jwks):
+    """ALL, not any. Distinct scopes name distinct capabilities, so admitting a
+    caller holding one of them would hand it the rest for free."""
+    cfg = _mcp_cfg(required_scopes="access_as_user,access_as_user.write")
+    tok = make_token(aud=GRAPH_AUD, scp="access_as_user")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 403
+
+
+def test_no_configured_scope_gate_admits_any_scope(make_token, patched_jwks):
+    """Defaults to off, so enabling it is a deliberate act rather than a break."""
+    tok = make_token(aud=GRAPH_AUD, scp="whatever")
+    with TestClient(_app(_mcp_cfg())) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 200

@@ -42,12 +42,17 @@ Adding all of 1–7 takes the surface past 100 tools, which is what makes the
 Pre-1.0, the configuration surface may change between minor versions. These are what have to settle
 before it is frozen under [semver](https://semver.org/spec/v2.0.0.html):
 
-- **Environment variable names.** `GRAPH_MCP_*` is stable in shape, but the auth-posture settings
-  (`GRAPH_MCP_DOES_OBO`, `GRAPH_MCP_AUDIENCE`) exist to describe two deployment models that may
-  collapse into one once RFC 8707 audience binding is universal in MCP clients.
+- **Removing the token-passthrough posture.** `GRAPH_MCP_DOES_OBO=false` is deprecated with removal
+  in `1.0.0`. Once it is gone, `GRAPH_MCP_DOES_OBO` itself disappears — there is only one posture
+  and the setting has nothing left to select. See
+  [ADR 0004](adr/0004-resource-server-by-default.md).
+- **Scope gates on by default.** `GRAPH_MCP_REQUIRED_SCOPE` and `GRAPH_MCP_WRITE_SCOPE_NAME` default
+  empty today and become `access_as_user` / `access_as_user.write` in `0.5.0`. Until then, a
+  deployment that does not set them gates writes on a caller-asserted header.
 - **The internal tier.** Nine tools reachable only by a shared-secret machine principal, extracted
   from the platform this was built for. Whether they stay in this package or move out is an open
-  question.
+  question — and the shared secret itself wants replacing with workload-identity federation now that
+  the OBO path supports it.
 - **Removing the pre-namespace aliases.** 51 of them, due in `0.4.0`. See the deprecation policy in
   [CONTRIBUTING.md](../CONTRIBUTING.md#deprecation-policy).
 

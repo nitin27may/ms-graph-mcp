@@ -138,7 +138,7 @@ async def test_acquire_token_for_client_returns_token(monkeypatch):
     app.acquire_token_for_client = MagicMock(return_value={"access_token": "app-tok"})
     monkeypatch.setattr(obo, "_get_app", lambda *a, **k: app)
     out = await obo.acquire_token_for_client(
-        ["https://graph.microsoft.com/.default"], tenant_id="t", client_id="c", client_secret="s"
+        ["https://graph.microsoft.com/.default"], tenant_id="t", client_id="c", credential="s"
     )
     assert out == "app-tok"
 
@@ -148,7 +148,7 @@ async def test_acquire_token_for_client_raises_on_rejection(monkeypatch):
     app.acquire_token_for_client = MagicMock(return_value={"error": "invalid_client"})
     monkeypatch.setattr(obo, "_get_app", lambda *a, **k: app)
     with pytest.raises(obo.OboError, match="invalid_client"):
-        await obo.acquire_token_for_client(["s"], tenant_id="t", client_id="c", client_secret="x")
+        await obo.acquire_token_for_client(["s"], tenant_id="t", client_id="c", credential="x")
 
 
 # ── Named internal tools ──────────────────────────────────────────────────────

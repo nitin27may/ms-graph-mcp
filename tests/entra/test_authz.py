@@ -6,12 +6,13 @@ from ms_graph_mcp.entra.authz import check_roles
 from ms_graph_mcp.entra.claims import Principal
 
 
-def _p(roles=(), app_only=False) -> Principal:
+def _p(roles=(), app_only=False, scopes=()) -> Principal:
     return Principal(
         subject_id="oid",
         email="a@b.com",
         tenant_id="t",
         roles=frozenset(roles),
+        scopes=frozenset(scopes),
         azp="app",
         is_app_only=app_only,
         raw={},

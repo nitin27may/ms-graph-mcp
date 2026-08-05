@@ -145,20 +145,82 @@ class GraphMcpConfig(BaseSettings):
         validation_alias=AliasChoices("GRAPH_MCP_JWT_VERIFY"),
     )
 
-    # ── Resource-server OBO (D4) ─────────────────────────────────────────────
+    # ── Resource-server OBO ──────────────────────────────────────────────────
     # When ``mcp_does_obo`` is on, graph-mcp is a real OAuth resource server: it
     # receives a token audienced to ITSELF (single-reg: ``api://<client_id>``;
     # Path B: ``obo_audience``) and exchanges it for a Microsoft Graph token via
-    # the OBO flow before calling Graph. This needs a confidential-client secret.
+    # the OBO flow before calling Graph. This needs a confidential-client
+    # credential — see ``client_credential``.
+    #
+    # Defaults TRUE. The alternative — accepting a token whose audience is Graph
+    # and narrowing it with an azp check — is the token-passthrough pattern the
+    # MCP authorization spec forbids: a server must validate that a token was
+    # issued *for it*, and azp says who minted a token rather than who it is for.
+    # Microsoft says the same thing about relaying middle-tier tokens, and names
+    # the consequence that bites here: it cannot satisfy Conditional Access
+    # claim step-up. Passthrough remains available, deliberately and loudly.
+    #
+    # **This is an HTTP-transport setting.** The stdio transport never runs the
+    # auth middleware that performs the exchange, so this has no effect there —
+    # which is deliberate, because a stdio token is already a Graph token and
+    # Entra will not redeem a token audienced to another app.
     mcp_does_obo: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices("GRAPH_MCP_DOES_OBO"),
     )
     # Confidential-client secret used for the OBO exchange (only needed when
     # mcp_does_obo). Reuses the app registration's own client secret.
+    #
+    # Lowest-precedence credential. Microsoft's Agent ID guidance is that client
+    # secrets "shouldn't be used as client credentials in production" — prefer a
+    # certificate or a federated identity credential below.
     client_secret: str = Field(
         default="",
         validation_alias=AliasChoices("GRAPH_MCP_CLIENT_SECRET", "AZURE_AD_CLIENT_SECRET"),
+    )
+    # PEM bundle (private key + certificate) for certificate authentication.
+    # Highest precedence: a leftover secret in the environment must not silently
+    # win over a deliberately configured certificate.
+    client_cert_path: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_CLIENT_CERT_PATH"),
+    )
+    client_cert_password: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_CLIENT_CERT_PASSWORD"),
+    )
+    # Projected token file for workload-identity federation (FIC). On AKS the
+    # workload-identity webhook mounts this; MSAL re-reads it per token request,
+    # so rotation is handled without restarting.
+    federated_token_file: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GRAPH_MCP_FEDERATED_TOKEN_FILE", "AZURE_FEDERATED_TOKEN_FILE"
+        ),
+    )
+    # Comma-separated allowlist of authorized parties (azp/appid) permitted to
+    # call this server. Empty = audience binding alone is the gate, which is the
+    # spec's requirement. Set it to pin specific agent identities or client apps
+    # as defence in depth — an Entra Agent ID presents the *agent identity's*
+    # client id here, not the blueprint's.
+    allowed_azp: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_ALLOWED_AZP"),
+    )
+    # The delegated scope a caller's token must carry (`scp`) to reach any tool,
+    # and the further one required for the write tier. Audience binding says the
+    # token is for this server; scopes say what its bearer may do.
+    #
+    # Both default empty (no gate) so this release changes one default rather
+    # than two — see deprecations.py, which records that they become
+    # `access_as_user` / `access_as_user.write` in 0.5.0.
+    required_scope: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_REQUIRED_SCOPE"),
+    )
+    write_scope_name: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_WRITE_SCOPE_NAME"),
     )
     # The audience graph-mcp validates in OBO mode. Empty → derived from
     # client_id (``api://<client_id>`` + bare GUID), which is the user token's
@@ -184,6 +246,35 @@ class GraphMcpConfig(BaseSettings):
     @property
     def obo_scopes_list(self) -> list[str]:
         return [s.strip() for s in self.obo_scopes.split(",") if s.strip()]
+
+    @property
+    def client_credential(self) -> str | dict | None:
+        """The MSAL client credential, or ``None`` when none is configured.
+
+        Precedence is certificate → federated → secret. Raises
+        ``obo.CredentialError`` if a configured credential cannot be assembled —
+        a missing certificate file is a deployment fault worth failing on, not
+        something to silently fall back from.
+        """
+        from ms_graph_mcp.obo import build_client_credential
+
+        return build_client_credential(
+            client_secret=self.client_secret,
+            cert_path=self.client_cert_path,
+            cert_password=self.client_cert_password,
+            federated_token_file=self.federated_token_file,
+        )
+
+    @property
+    def credential_kind(self) -> str:
+        """Which credential is in play, for startup logging. Never its value."""
+        if self.client_cert_path:
+            return "certificate"
+        if self.federated_token_file:
+            return "federated identity credential"
+        if self.client_secret:
+            return "client secret"
+        return "none"
 
     @property
     def authorization_server(self) -> str:
@@ -232,11 +323,14 @@ class GraphMcpConfig(BaseSettings):
         """Build the entra AuthConfig for the Graph downstream surface.
 
         Two postures:
-          - **OBO (mcp_does_obo)** — the inbound token is the *user* token
-            audienced to this MCP. Validate the MCP's own audience (RFC 8707);
-            drop the azp gate (audience binding is the gate).
-          - **Interim (default)** — the inbound token is the agent's OBO'd Graph
-            token. Validate the Graph audience + azp == our app.
+          - **Resource server (default)** — the inbound token is the *user* token
+            audienced to this MCP. Audience binding (RFC 8707) is the gate, so
+            the azp check is not needed and is opt-in defence in depth. The
+            delegated scope gate applies here.
+          - **Passthrough (opt-in, deprecated)** — the inbound token is an
+            already-OBO'd Graph token. Validate the Graph audience + azp == our
+            app, because a Graph audience alone is generic across every app in
+            the tenant.
         """
         if self.mcp_does_obo:
             return AuthConfig(
@@ -245,7 +339,8 @@ class GraphMcpConfig(BaseSettings):
                 client_id=self.client_id,
                 # Empty obo_audience → AuthConfig derives api://<client_id> + GUID.
                 audience=self.obo_audience,
-                allowed_azp="",
+                allowed_azp=self.allowed_azp,
+                required_scopes=self.required_scope,
                 shared_secret=self.shared_secret,
             )
         return AuthConfig(
@@ -253,8 +348,10 @@ class GraphMcpConfig(BaseSettings):
             tenant_id=self.tenant_id,
             audience=GRAPH_AUDIENCE,
             # Restrict to OBO tokens minted by our app (empty client_id → no azp
-            # gate, e.g. an unconfigured standalone server).
-            allowed_azp=self.client_id,
+            # gate, e.g. an unconfigured standalone server). An explicit
+            # allowlist overrides, so the two postures configure the same way.
+            allowed_azp=self.allowed_azp or self.client_id,
+            required_scopes=self.required_scope,
             shared_secret=self.shared_secret,
         )
 

@@ -1,6 +1,6 @@
 # Testing
 
-875 tests, all offline. No Graph call is ever made, no network is touched, and the whole suite runs
+927 tests, all offline. No Graph call is ever made, no network is touched, and the whole suite runs
 in under two seconds — so there is no reason to skip it before pushing.
 
 ```bash

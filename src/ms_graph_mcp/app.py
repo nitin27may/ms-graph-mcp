@@ -95,6 +95,73 @@ def _discovery_routes(cfg: GraphMcpConfig) -> list[Route]:
     )
 
 
+class ConfigurationError(RuntimeError):
+    """The HTTP transport cannot start with the configuration it was given."""
+
+
+def _check_auth_posture(cfg: GraphMcpConfig) -> None:
+    """Validate the HTTP transport's auth posture at startup.
+
+    **HTTP only.** The stdio entry point never calls this — a workstation user
+    has a client id and no secret, and the resource-server posture has no meaning
+    for a transport that signs the user in directly.
+
+    Failing here rather than at the first tool call matters: a missing credential
+    otherwise surfaces as a mid-session ``obo_failed`` on an unrelated-looking
+    Graph operation, a long way from its cause.
+    """
+    if not cfg.mcp_does_obo:
+        logger.warning(
+            "ms-graph-mcp: GRAPH_MCP_DOES_OBO=false — accepting tokens audienced to Microsoft "
+            "Graph rather than to this server. The MCP authorization specification requires a "
+            "server to validate that a token was issued for it, and Microsoft advises against "
+            "relaying middle-tier tokens; among other things it cannot satisfy Conditional "
+            "Access claim step-up. This posture is deprecated and will be removed in 1.0."
+        )
+        return
+
+    try:
+        credential = cfg.client_credential
+    except Exception as exc:  # CredentialError, or an unreadable file
+        raise ConfigurationError(
+            f"ms-graph-mcp: the configured client credential could not be loaded: {exc}"
+        ) from exc
+
+    if credential is None:
+        raise ConfigurationError(
+            "ms-graph-mcp: the HTTP transport runs as an OAuth resource server and needs a "
+            "confidential-client credential to exchange the caller's token for a Microsoft "
+            "Graph token. Set one of:\n"
+            "  GRAPH_MCP_CLIENT_CERT_PATH        a PEM bundle (recommended)\n"
+            "  GRAPH_MCP_FEDERATED_TOKEN_FILE    workload identity / managed identity\n"
+            "  GRAPH_MCP_CLIENT_SECRET           development only\n"
+            "Or set GRAPH_MCP_DOES_OBO=false to keep accepting already-exchanged Graph "
+            "tokens (deprecated). The stdio transport is unaffected and needs none of this."
+        )
+
+    if not (cfg.tenant_id and cfg.client_id):
+        raise ConfigurationError(
+            "ms-graph-mcp: GRAPH_MCP_TENANT_ID and GRAPH_MCP_CLIENT_ID are both required for "
+            "the on-behalf-of exchange."
+        )
+
+    if cfg.credential_kind == "client secret":
+        logger.warning(
+            "ms-graph-mcp: authenticating with a client secret. Microsoft's guidance is that "
+            "secrets should not be used as client credentials in production — prefer "
+            "GRAPH_MCP_CLIENT_CERT_PATH or GRAPH_MCP_FEDERATED_TOKEN_FILE."
+        )
+    else:
+        logger.info("ms-graph-mcp: OBO credential is a %s", cfg.credential_kind)
+
+    if not cfg.write_scope_name:
+        logger.info(
+            "ms-graph-mcp: GRAPH_MCP_WRITE_SCOPE_NAME is unset, so the write tier is gated by "
+            "the X-Write-Scope header alone — a value the caller sets for itself. Name a "
+            "delegated scope to bind write access to the token instead."
+        )
+
+
 def build_app(
     cfg: GraphMcpConfig | None = None,
     *,
@@ -114,6 +181,7 @@ def build_app(
     if cfg is not None:
         set_config(cfg)
     active = get_config()
+    _check_auth_posture(active)
 
     mcp_server = build_graph_mcp_server()
 

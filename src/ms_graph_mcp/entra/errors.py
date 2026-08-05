@@ -52,6 +52,12 @@ class RoleError(AuthorizationError):
     reason = "role_denied"
 
 
+class ScopeError(AuthorizationError):
+    """The caller's token lacks a required delegated scope (``scp``)."""
+
+    reason = "scope_denied"
+
+
 class AppOnlyError(AuthorizationError):
     """An app-only token was presented to a service that only allows users."""
 

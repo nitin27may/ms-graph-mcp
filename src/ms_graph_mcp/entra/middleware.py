@@ -33,6 +33,7 @@ from ms_graph_mcp.entra.errors import (
     AzpError,
     MissingTokenError,
     RoleError,
+    ScopeError,
     ServiceAuthError,
 )
 from ms_graph_mcp.entra.jwt_verify import verify_token
@@ -53,6 +54,11 @@ def _machine_principal(request: Request) -> Principal:
         email=email,
         tenant_id="",
         roles=frozenset(),
+        # No delegated scopes: this principal presented a shared secret, not a
+        # user token, so there is no `scp` to speak of. The scope gate
+        # short-circuits on `is_machine` rather than treating this as a caller
+        # that was granted nothing.
+        scopes=frozenset(),
         azp="",
         is_app_only=True,
         is_machine=True,
@@ -118,7 +124,19 @@ async def authenticate_request(
     if principal.is_app_only and not cfg.allow_app_only:
         raise AppOnlyError("app-only tokens are not permitted for this service")
 
-    # 5. App-Role gate — agent edge only. The OBO token's audience is generic
+    # 5. Delegated-scope gate — the downstream edge's authorization step.
+    # Audience binding proves the token was minted for this service; `scp`
+    # proves its bearer was actually granted something. Without this, any client
+    # able to obtain a correctly-audienced token reaches the whole surface.
+    #
+    # ALL required scopes must be present, not any: they name distinct
+    # capabilities, so "holds one of them" would grant the rest for free.
+    required_scopes = cfg.required_scopes_set
+    if required_scopes and not required_scopes <= principal.scopes:
+        missing = sorted(required_scopes - principal.scopes)
+        raise ScopeError(f"caller token is missing required scope(s): {', '.join(missing)}")
+
+    # 6. App-Role gate — agent edge only. The OBO token's audience is generic
     # across apps, so azp (step 3) is what restricts DOWNSTREAM_SERVICE's
     # surface, not a role claim — see AuthMode's docstring.
     if mode == AuthMode.AGENT_EDGE:

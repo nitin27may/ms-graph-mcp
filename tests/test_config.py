@@ -84,23 +84,47 @@ def test_get_config_is_cached_and_overridable():
 # ── Resource-server OBO posture (D4) ──────────────────────────────────────────
 
 
-def test_interim_auth_config_validates_graph_audience_and_azp():
-    # Default (mcp_does_obo off): accept the agent's OBO'd Graph token.
-    cfg = GraphMcpConfig(_env_file=None, client_id="our-app")
+def test_passthrough_auth_config_validates_graph_audience_and_azp():
+    """Opt-in posture: accept a Graph token the caller already exchanged.
+
+    A Graph audience is generic across every app in the tenant, so azp is what
+    narrows it — which is exactly why this posture is not the default. It proves
+    who minted the token, not that the token was issued for this server.
+    """
+    cfg = GraphMcpConfig(_env_file=None, mcp_does_obo=False, client_id="our-app")
     ac = cfg.to_auth_config()
     assert ac.audience == GRAPH_AUDIENCE
     assert ac.allowed_azp == "our-app"
 
 
 def test_obo_auth_config_validates_own_audience_and_drops_azp():
+    # Default posture — stated explicitly here so the test still says what it
+    # means if the default ever moves again.
     cfg = GraphMcpConfig(_env_file=None, mcp_does_obo=True, client_id="our-app")
     ac = cfg.to_auth_config()
     # No explicit audience → derived from client_id (the user token's audience
     # under the single registration).
     assert ac.audience == ""
     assert ac.audience_list == ["api://our-app", "our-app"]
-    # azp gate retired in favour of RFC 8707 audience binding.
+    # RFC 8707 audience binding is the gate; azp is opt-in defence in depth.
     assert ac.allowed_azp == ""
+
+
+def test_the_default_posture_is_resource_server():
+    """The spec-conformant posture must be the one you get by doing nothing.
+
+    Accepting a Graph-audienced token is the token-passthrough pattern the MCP
+    authorization spec forbids — a server must validate that a token was issued
+    for *it*. Leaving that as the default would mean an operator had to read the
+    docs to end up conformant.
+    """
+    assert GraphMcpConfig(_env_file=None).mcp_does_obo is True
+
+
+def test_azp_allowlist_can_be_set_explicitly():
+    """Agent identities are pinned here when audience alone is not enough."""
+    cfg = GraphMcpConfig(_env_file=None, client_id="our-app", allowed_azp="agent-a,agent-b")
+    assert cfg.to_auth_config().allowed_azp == "agent-a,agent-b"
 
 
 def test_obo_auth_config_honours_explicit_path_b_audience():

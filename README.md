@@ -318,7 +318,7 @@ Three tiers, one auth seam.
 | Tier | Count | Exposed when | Examples |
 |---|---:|---|---|
 | **Read** | 53 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `search_query` |
-| **Write** | 23 | `X-Write-Scope: true` | `mail_send`, `calendar_create_event`, `files_create_sharing_link`, `tasks_complete_todo` |
+| **Write** | 23 | `X-Write-Scope: true`, plus the write scope in the token when one is configured | `mail_send`, `calendar_create_event`, `files_create_sharing_link`, `tasks_complete_todo` |
 | **Internal** | 9 | `X-Internal-Scope: true`, machine principal only | `graph_request` passthrough, drive walk/upload, message attachments, app-only `probe_graph_access` |
 
 The internal tier is not part of the agent surface. A model sees **76 agent-visible** tools.
@@ -344,6 +344,7 @@ know what needs confirming, and every description names the delegated permission
 | [docs/configuration.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/configuration.md) | Every environment variable, split by deployment shape |
 | [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
 | [docs/hosting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/hosting.md) | Streamable HTTP, headers, Docker and GHCR |
+| [docs/agent-auth.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/agent-auth.md) | Agents acting for a signed-in user — the on-behalf-of chain, Entra Agent ID, scopes, step-up |
 | [docs/troubleshooting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/troubleshooting.md) | Entra errors, Conditional Access, corporate TLS proxies |
 | [docs/debugging.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
 | [docs/graph-coverage.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/graph-coverage.md) | What this covers of the Graph v1.0 surface, what it does not, and what is out of scope |

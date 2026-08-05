@@ -197,16 +197,16 @@ async def dispatch_graph_tool(
     # token — no user session. Mint it here and skip the user-token guard + OBO.
     if name in APP_ONLY_INTERNAL_TOOL_NAME_SET:
         cfg = get_config()
-        from ms_graph_mcp.obo import OboError, acquire_token_for_client
+        from ms_graph_mcp.obo import CredentialError, OboError, acquire_token_for_client
 
         try:
             app_token = await acquire_token_for_client(
                 cfg.obo_scopes_list,
                 tenant_id=cfg.tenant_id,
                 client_id=cfg.client_id,
-                client_secret=cfg.client_secret,
+                credential=cfg.client_credential or "",
             )
-        except OboError as exc:
+        except (OboError, CredentialError) as exc:
             return _error_result("app_only_token_failed", f"client-credentials failed: {exc}")
         context = {**current_request_context.get(), "access_token": app_token}
         result = await get_registry().call(name, json.dumps(arguments or {}), context)
@@ -249,34 +249,28 @@ async def dispatch_graph_tool(
             "Set GRAPH_MCP_CLIENT_ID to sign in interactively, or "
             "GRAPH_MCP_ACCESS_TOKEN to supply a token directly."
             if context.get("transport") == "stdio"
-            else "Supply the token in the X-Graph-Token header."
+            else "Send it as 'Authorization: Bearer <token>'."
         )
         return _error_result(
             "missing_graph_token",
             f"No Graph access token was supplied. {remedy}",
         )
 
-    # Resource-server OBO (D4): in OBO mode the inbound token is the *user* token
-    # audienced to this MCP — exchange it for a Microsoft Graph token before the
-    # tool runs. In the interim posture the agent already forwarded a Graph token,
-    # so this is a no-op. The exchange comes AFTER the missing-token guard so an
-    # absent token still fails closed.
-    cfg = get_config()
-    if cfg.mcp_does_obo:
-        from ms_graph_mcp.obo import OboError, acquire_token_on_behalf_of
-
-        try:
-            graph_token = await acquire_token_on_behalf_of(
-                context["access_token"],
-                cfg.obo_scopes_list,
-                tenant_id=cfg.tenant_id,
-                client_id=cfg.client_id,
-                client_secret=cfg.client_secret,
-            )
-        except OboError as exc:
-            return _error_result("obo_failed", f"graph-mcp OBO exchange failed: {exc}")
-        context = {**context, "access_token": graph_token}
-
+    # NOTE: no OBO exchange here, deliberately. In the resource-server posture
+    # the HTTP middleware has already exchanged the inbound token, so
+    # ``access_token`` is a Graph token by the time dispatch runs.
+    #
+    # Keeping the exchange out of this function is what makes the stdio
+    # transport safe. Dispatch is shared, and a stdio token comes from
+    # interactive sign-in — it is *already* a Graph token, which Entra refuses to
+    # redeem for another app. An exchange attempted here would break every local
+    # client (VS Code, Claude Code, Claude Desktop) on its first tool call.
+    # ``tests/test_stdio_unaffected.py`` holds that line.
+    #
+    # It also has to live on the HTTP edge for a second reason: a Conditional
+    # Access claims challenge is only actionable as a 401 with a
+    # ``WWW-Authenticate`` header, and this function cannot shape an HTTP
+    # response.
     result = await get_registry().call(name, json.dumps(arguments or {}), context)
     return _success_result(result)
 

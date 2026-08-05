@@ -19,6 +19,11 @@ class Principal:
     email: str  # preferred_username / upn / email, lowercased ("" for app-only)
     tenant_id: str  # tid
     roles: frozenset[str]  # App Roles from the `roles` claim
+    # Delegated permissions from the `scp` claim — what this caller may do *as*
+    # the user. Distinct from `roles`, which are application permissions granted
+    # to the app itself. A downstream service authorizing a delegated caller
+    # gates on these; app-only tokens carry none.
+    scopes: frozenset[str]
     azp: str  # authorized party — azp (v2) or appid (v1)
     is_app_only: bool  # client-credentials token (no user) vs delegated
     # S2 (agentic audit) — distinct from is_app_only. Any real Entra
@@ -44,6 +49,13 @@ def extract_principal(claims: dict) -> Principal:
     if isinstance(raw_roles, str):
         raw_roles = [raw_roles]
 
+    # `scp` is a space-delimited string in Entra v2 tokens. Some issuers emit a
+    # list, and v1 tokens spell it `scope`; accept all three rather than making
+    # the caller care.
+    raw_scopes = claims.get("scp") or claims.get("scope") or []
+    if isinstance(raw_scopes, str):
+        raw_scopes = raw_scopes.split()
+
     azp = (claims.get("azp") or claims.get("appid") or "").strip()
     subject_id = (claims.get("oid") or claims.get("sub") or "").strip()
     tenant_id = (claims.get("tid") or "").strip()
@@ -57,6 +69,7 @@ def extract_principal(claims: dict) -> Principal:
         email=email,
         tenant_id=tenant_id,
         roles=frozenset(raw_roles),
+        scopes=frozenset(raw_scopes),
         azp=azp,
         is_app_only=is_app_only,
         raw=claims,

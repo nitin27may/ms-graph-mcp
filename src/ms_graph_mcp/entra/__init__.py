@@ -34,6 +34,7 @@ from ms_graph_mcp.entra.errors import (
     InvalidTokenError,
     MissingTokenError,
     RoleError,
+    ScopeError,
     ServiceAuthError,
 )
 from ms_graph_mcp.entra.jwt_verify import get_jwks_client, verify_token
@@ -79,5 +80,6 @@ __all__ = [
     "ServiceAuthError",
     "AzpError",
     "RoleError",
+    "ScopeError",
     "AppOnlyError",
 ]

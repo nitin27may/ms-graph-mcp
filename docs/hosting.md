@@ -23,8 +23,8 @@ Graph, so a healthy response means the process is serving — not that Entra is 
 
 | Header | Purpose |
 |---|---|
-| `Authorization: Bearer <token>` | **Required.** Either a Microsoft Graph access token (validated as a real Entra JWT), or the configured shared secret for a machine caller. |
-| `X-Write-Scope: true` | Expose *and* permit the write tools for this request. |
+| `Authorization: Bearer <token>` | **Required.** A token audienced to **this server** (`api://<client-id>`), which it exchanges for a Graph token; or the configured shared secret for a machine caller. |
+| `X-Write-Scope: true` | Permit the write tools for this request. Only a *request* — when `GRAPH_MCP_WRITE_SCOPE_NAME` is set, the token's `scp` decides and this can only narrow. |
 | `X-Toolsets: mail,calendar` | Narrow the advertised tool surface for this request. Can only narrow — the startup value is a ceiling. |
 | `X-Entra-App-Token: <token>` | Optional app-only token for directory and group lookups that delegated permissions cannot cover tenant-wide. |
 | `X-Internal-Scope: true` | Expose the internal deterministic tier. Honoured **only** for the shared-secret machine principal — never for a user token. |
@@ -33,6 +33,14 @@ Graph, so a healthy response means the process is serving — not that Entra is 
 The internal tier gates on the caller being a *machine principal*, which only the shared-secret
 bypass sets. A real Entra client-credentials token does not qualify. That distinction came out of a
 security audit and is asserted by tests in two places.
+
+**The `Authorization` token is audienced to this server, not to Graph.** That is the default posture
+— see [agent-auth.md](agent-auth.md) for the app registration and consent it needs, and
+[ADR 0004](adr/0004-resource-server-by-default.md) for why. The old behaviour, where a caller
+forwarded a Graph token it had already exchanged, is `GRAPH_MCP_DOES_OBO=false` and is deprecated.
+
+A `401` carrying a `claims` parameter in `WWW-Authenticate` is Conditional Access asking for
+step-up, not a failure: the client should acquire a new token presenting those claims and retry.
 
 ## Set `GRAPH_MCP_RESOURCE_URL` when you deploy behind a proxy
 
@@ -117,6 +125,13 @@ replacing it — replacing it means the transport never starts.
 [SECURITY.md](../SECURITY.md) is the checklist. The short version:
 
 - `GRAPH_MCP_JWT_VERIFY` stays on. It defaults on for a reason.
+- Leave `GRAPH_MCP_DOES_OBO` alone. The default is the spec-conformant posture; turning it off
+  accepts tokens that were not issued for this server.
+- Use a **certificate or federated credential**, not `GRAPH_MCP_CLIENT_SECRET`. The server warns at
+  startup if you use a secret.
+- Set `GRAPH_MCP_REQUIRED_SCOPE` and `GRAPH_MCP_WRITE_SCOPE_NAME`. Without them, any caller holding
+  a correctly-audienced token reaches the whole surface, and the write tier is decided by a header
+  the caller sets for itself.
 - Set `GRAPH_MCP_RESOURCE_URL`, or nothing reaches a handler.
 - Set `GRAPH_MCP_READ_ONLY=true` unless writes are genuinely needed — it removes the write tier from
   the deployment rather than trusting callers to omit a header.

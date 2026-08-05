@@ -8,6 +8,75 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING (HTTP transport): `GRAPH_MCP_DOES_OBO` now defaults to `true`.** The server is an OAuth
+  resource server by default — callers present a token audienced to *this* server and it performs
+  the on-behalf-of exchange itself. The previous default accepted a token audienced to Microsoft
+  Graph, which is the token-passthrough pattern the MCP authorization specification forbids: a
+  server must validate that a token was issued *for it*, and `azp` establishes who minted a token
+  rather than who it is for. Microsoft gives the same advice about relaying middle-tier tokens and
+  names the consequence that bites hardest — it cannot satisfy Conditional Access claim step-up.
+  See [ADR 0004](docs/adr/0004-resource-server-by-default.md).
+
+  **The stdio transport is unaffected**, and the setting now has no meaning there. Migration for an
+  HTTP deployment is either to configure a credential (below) or to set `GRAPH_MCP_DOES_OBO=false`
+  explicitly; the server refuses to start otherwise, naming both options.
+
+- **The on-behalf-of exchange moved from dispatch into the HTTP auth middleware.** It previously
+  lived in `dispatch_graph_tool`, which both transports share, so `GRAPH_MCP_DOES_OBO=true` with
+  stdio attempted to redeem a token Entra will never redeem — the interactive-sign-in token is
+  already a Graph token — and broke every tool call. stdio was safe only because of a default.
+  There is now no code path by which a stdio session can reach an exchange.
+
+### Added
+
+- **Certificate and federated-credential support for the exchange.** `GRAPH_MCP_CLIENT_CERT_PATH`
+  (PEM bundle) and `GRAPH_MCP_FEDERATED_TOKEN_FILE` (AKS workload identity — re-read per exchange,
+  so rotation needs no restart) join `GRAPH_MCP_CLIENT_SECRET`. Precedence is certificate →
+  federated → secret, so a leftover secret cannot outrank a deliberately configured certificate.
+  Microsoft's guidance is that secrets should not be used as client credentials in production; using
+  one now warns at startup.
+- **Delegated-scope authorization.** `Principal` carries the `scp` claim, and
+  `GRAPH_MCP_REQUIRED_SCOPE` gates the tool surface on it. Audience binding proves a token was
+  issued for this server; it says nothing about what its bearer was granted, so without this any
+  correctly-audienced token reached everything. Configuring the gate forces signature verification
+  on — an authorization check over an unverified token is forgeable.
+- **Write access can be bound to the token.** With `GRAPH_MCP_WRITE_SCOPE_NAME` set, write tools
+  need that scope in `scp` *and* `X-Write-Scope: true`, so the header can only narrow. Previously
+  the header alone decided, which is a value the caller sets for itself.
+- `GRAPH_MCP_ALLOWED_AZP` — pin which client applications may call, as defence in depth on top of
+  audience binding. An Entra Agent ID presents the *agent identity's* client id here.
+- **Startup validation for the HTTP transport.** `build_app()` refuses to start in resource-server
+  mode with no usable credential, naming the three options and the opt-out. A missing credential
+  previously surfaced as an `obo_failed` mid-session on whatever tool the model happened to call.
+- [docs/agent-auth.md](docs/agent-auth.md) — the two-hop chain, app registration and consent setup,
+  Entra Agent ID (blueprint → agent identity → MCP → Graph), and Conditional Access step-up.
+- `tests/test_stdio_unaffected.py` — the regression guard asserting that a stdio session performs no
+  exchange even with `GRAPH_MCP_DOES_OBO=true`.
+
+### Fixed
+
+- **Conditional Access claims challenges now reach the client.** A failed exchange became a
+  structured error inside a `200` `CallToolResult`, so the challenge was invisible and MFA step-up
+  could not complete. The middleware now answers `401` with the challenge in `WWW-Authenticate`,
+  which is what Microsoft's guidance prescribes. A configuration fault stays a `500`, so a client is
+  not looped against a problem no token can fix.
+- **Audience is validated even when `GRAPH_MCP_JWT_VERIFY=false`.** The unverified decode path
+  checked expiry and issuer but not `aud`, so turning off signature verification for a local run
+  silently dropped the audience gate and a Graph-audienced token was accepted. Validating `aud`
+  needs no signing key.
+- `missing_graph_token` told HTTP callers to use an `X-Graph-Token` header, which nothing reads.
+
+### Deprecated
+
+- **The token-passthrough posture (`GRAPH_MCP_DOES_OBO=false`)**, removal in `1.0.0`. Kept because
+  the platform this server was extracted from runs it, and migrating needs an app registration
+  change that cannot be done in a deploy.
+- **`GRAPH_MCP_REQUIRED_SCOPE` / `GRAPH_MCP_WRITE_SCOPE_NAME` defaulting to empty**, becoming
+  `access_as_user` / `access_as_user.write` in `0.5.0`. Not changed now only because `0.4.0` already
+  flips the OBO posture, and two default changes at once would make a `403` ambiguous to debug.
+
 ### Added
 
 - `scripts/check_docs.py` — derives every tool count quoted in prose from the allowlists, the

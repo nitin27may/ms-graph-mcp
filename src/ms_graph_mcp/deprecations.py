@@ -61,4 +61,39 @@ DEPRECATIONS: tuple[Deprecation, ...] = (
             "Aliases are already absent from tools/list, so they cost no context."
         ),
     ),
+    Deprecation(
+        what="the token-passthrough posture (`GRAPH_MCP_DOES_OBO=false`)",
+        replacement=(
+            "the resource-server posture, now the default — callers present a token "
+            "audienced to this server and it performs the on-behalf-of exchange itself"
+        ),
+        deprecated_in="0.4.0",
+        remove_in="1.0.0",
+        note=(
+            "Accepting a token audienced to Microsoft Graph is the token-passthrough "
+            "pattern the MCP authorization specification forbids: a server must validate "
+            "that a token was issued for *it*, and `azp` establishes who minted a token "
+            "rather than who it is for. Microsoft gives the same advice about relaying "
+            "middle-tier tokens, and names the consequence that bites hardest here — it "
+            "cannot satisfy Conditional Access claim step-up. "
+            "Kept until 1.0 rather than removed now because the platform this server was "
+            "extracted from runs it, and the migration needs an app registration change "
+            "(exposing a scope, then re-consenting) that cannot be done in a deploy."
+        ),
+    ),
+    Deprecation(
+        what="`GRAPH_MCP_REQUIRED_SCOPE` / `GRAPH_MCP_WRITE_SCOPE_NAME` defaulting to empty",
+        replacement="`access_as_user` and `access_as_user.write` respectively",
+        deprecated_in="0.4.0",
+        remove_in="0.5.0",
+        note=(
+            "Empty means no delegated-scope gate, so today any caller holding a "
+            "correctly-audienced token reaches the whole surface and the write tier is "
+            "decided by a header the caller sets for itself. The safe values should be "
+            "the ones you get by doing nothing. "
+            "They are not the defaults yet only because 0.4.0 already flips the OBO "
+            "posture, and changing both at once would mean an operator debugging a 403 "
+            "could not tell which change caused it."
+        ),
+    ),
 )
