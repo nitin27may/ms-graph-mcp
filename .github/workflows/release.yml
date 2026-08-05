@@ -283,11 +283,17 @@ jobs:
         run: |
           python -m pip install --quiet packaging
 
+          # A *separate* venv from /tmp/verify, which already has the package
+          # installed. `pip install --dry-run` in that one reports "already
+          # satisfied" and prints no version at all, so the check reads as
+          # "nothing resolves" no matter what the index holds.
+          python -m venv /tmp/resolve
+
           # Index flags are repeated rather than held in a variable: relying on
           # word-splitting an unquoted "$FLAGS" works in bash and silently does
           # not in zsh, which is a poor thing for a release to depend on.
           resolve() {
-            /tmp/verify/bin/pip install --dry-run --no-deps \
+            /tmp/resolve/bin/pip install --dry-run --no-deps \
               --index-url https://test.pypi.org/simple/ \
               --extra-index-url https://pypi.org/simple/ \
               "$@" ms-graph-mcp 2>/dev/null \
