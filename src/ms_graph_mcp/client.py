@@ -242,6 +242,48 @@ async def graph_post_no_content(
             resp.raise_for_status()
 
 
+async def graph_post_raw(
+    access_token: str,
+    path: str,
+    content: bytes,
+    content_type: str,
+    *,
+    timeout_seconds: float = 30.0,
+) -> dict:
+    """POST a non-JSON body to Microsoft Graph and return the parsed JSON reply.
+
+    A few Graph endpoints take a raw entity body rather than a JSON document —
+    OneNote page creation wants ``text/html``, for instance. :func:`graph_post`
+    serialises its argument as JSON and so cannot express those, which is why
+    they used to hand-roll ``httpx`` and lose the tracing span, the ``[Graph]``
+    error logging and the TLS toggle.
+    """
+    url = f"{_GRAPH_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": content_type,
+        "Accept": "application/json",
+    }
+    with _tracer.start_as_current_span(
+        "graph.request",
+        attributes={"http.method": "POST", "http.url": url},
+    ) as span:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify,
+            timeout=httpx.Timeout(timeout_seconds),
+        ) as client:
+            logger.info("[Graph] POST %s (%s)", path, content_type)
+            resp = await client.post(url, headers=headers, content=content)
+            span.set_attribute("http.status_code", resp.status_code)
+            if not resp.is_success:
+                span.set_status(trace.StatusCode.ERROR, f"HTTP {resp.status_code}")
+                _log_error(resp)
+            else:
+                logger.info("[Graph] POST %s → %s", path, resp.status_code)
+            resp.raise_for_status()
+            return resp.json()
+
+
 async def graph_patch(
     access_token: str,
     path: str,

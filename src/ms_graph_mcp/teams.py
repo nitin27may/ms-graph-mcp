@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import httpx
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get
-from ms_graph_mcp.config import get_config
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.client import graph_get, graph_post
+from ms_graph_mcp.errors import graph_error_response
+from ms_graph_mcp.tooling import READ_ONLY, tool
 
 
 class SearchTeamsMessagesInput(BaseModel):
@@ -29,9 +30,18 @@ class GetTeamChannelsInput(BaseModel):
 
 
 @tool(
-    description="Search across all Teams channels the user has access to. Returns message text, author, and channel."
+    description=(
+        "Search Microsoft Teams messages the signed-in user can see, across every team and chat, "
+        "by keyword. Returns message text, author, timestamp and a link to the message in Teams. "
+        "Use for 'what did someone say about X'. chat_list_channel_messages is the tool for "
+        "reading one channel in order instead of searching. Requires Chat.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_teams_messages",),
 )
-async def search_teams_messages(params: SearchTeamsMessagesInput, context: dict) -> list[dict]:
+async def chat_search_messages(
+    params: SearchTeamsMessagesInput, context: dict
+) -> list[dict] | dict:
     token = context["access_token"]
     # Use Graph search API for cross-team message search
     search_body = {
@@ -44,17 +54,12 @@ async def search_teams_messages(params: SearchTeamsMessagesInput, context: dict)
             }
         ]
     }
-    import httpx
-
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.post(
-            "https://graph.microsoft.com/v1.0/search/query",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json=search_body,
-        )
-        if resp.status_code != 200:
-            return []
-        data = resp.json()
+    try:
+        data = await graph_post(token, "/search/query", search_body)
+    except httpx.HTTPStatusError as exc:
+        # Previously this swallowed every non-200 and returned [], so a
+        # permission problem was indistinguishable from "no messages match".
+        return graph_error_response(exc, scope="Chat.Read", tool="chat_search_messages")
 
     hits = []
     for result in data.get("value") or []:
@@ -76,8 +81,17 @@ async def search_teams_messages(params: SearchTeamsMessagesInput, context: dict)
     return hits
 
 
-@tool(description="Get recent messages from a specific Teams channel.")
-async def get_channel_messages(params: GetChannelMessagesInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "Read the most recent messages in one Teams channel, newest first, given a team id and "
+        "channel id from chat_list_teams and chat_list_channels. Returns text, author, timestamp "
+        "and importance. Use to catch up on a channel; chat_search_messages is the tool for "
+        "finding a message by keyword across everything. Requires ChannelMessage.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_channel_messages",),
+)
+async def chat_list_channel_messages(params: GetChannelMessagesInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -102,8 +116,17 @@ async def get_channel_messages(params: GetChannelMessagesInput, context: dict) -
     ]
 
 
-@tool(description="Get the list of Teams the user has joined.")
-async def get_joined_teams(params: GetJoinedTeamsInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the Microsoft Teams the signed-in user is a member of, with id, name and "
+        "description. Start here for anything scoped to a team — the returned team id is what "
+        "chat_list_channels takes, and a channel id from that is what reading messages needs. "
+        "Requires Team.ReadBasic.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_joined_teams",),
+)
+async def chat_list_teams(params: GetJoinedTeamsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -120,8 +143,17 @@ async def get_joined_teams(params: GetJoinedTeamsInput, context: dict) -> list[d
     ]
 
 
-@tool(description="Get the channels available in a specific Teams team.")
-async def get_team_channels(params: GetTeamChannelsInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the channels in one Microsoft Teams team, with id, name and description. Takes a "
+        "team id from chat_list_teams. The returned channel id is what "
+        "chat_list_channel_messages needs to read a conversation. Requires "
+        "Channel.ReadBasic.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_team_channels",),
+)
+async def chat_list_channels(params: GetTeamChannelsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,

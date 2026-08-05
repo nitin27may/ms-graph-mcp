@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get
-from ms_graph_mcp.config import get_config
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.client import graph_get, graph_post_raw
+from ms_graph_mcp.tooling import READ_ONLY, WRITE_CREATE, tool
 
 
 class GetNotebooksInput(BaseModel):
@@ -24,8 +23,17 @@ class SaveToOnenoteInput(BaseModel):
     content_html: str = Field(description="HTML content for the page body")
 
 
-@tool(description="Get the user's OneNote notebooks.")
-async def get_notebooks(params: GetNotebooksInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the signed-in user's OneNote notebooks, with id, name, last-modified date and web "
+        "URL. Call this first when saving or finding a note — a notebook id is what "
+        "notes_list_sections takes, and a section id from there is what notes_create_page needs. "
+        "Covers notebooks the user owns and ones shared with them. Requires Notes.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_notebooks",),
+)
+async def notes_list_notebooks(params: GetNotebooksInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -43,8 +51,17 @@ async def get_notebooks(params: GetNotebooksInput, context: dict) -> list[dict]:
     ]
 
 
-@tool(description="Get sections in a OneNote notebook.")
-async def get_sections(params: GetSectionsInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List the sections inside one OneNote notebook, with id, name and last-modified date. "
+        "Takes a notebook id from notes_list_notebooks. Sections are the tabs within a notebook "
+        "and are what pages actually live in, so a section id from here is required before "
+        "notes_create_page can write anything. Requires Notes.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_sections",),
+)
+async def notes_list_sections(params: GetSectionsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -76,25 +93,26 @@ async def create_onenote_page(
 <body>{content_html}</body>
 </html>"""
 
-    import httpx
-
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.post(
-            f"https://graph.microsoft.com/v1.0/me/onenote/sections/{section_id}/pages",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "text/html",
-            },
-            content=html_body.encode("utf-8"),
-        )
-        resp.raise_for_status()
-        return resp.json()
+    return await graph_post_raw(
+        token,
+        f"/me/onenote/sections/{section_id}/pages",
+        html_body.encode("utf-8"),
+        "text/html",
+    )
 
 
 @tool(
-    description="Save content as a new page in a OneNote notebook section. Content must be valid HTML."
+    description=(
+        "Create a new page in a OneNote section and return its id and web URL. Takes a section id "
+        "from notes_list_sections, a title, and the body as valid HTML — plain text will not "
+        "render correctly. Use for saving meeting notes, summaries or research into the user's "
+        "notebooks. Always adds a new page; it cannot edit an existing one. "
+        "Requires Notes.Create."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("save_to_onenote",),
 )
-async def save_to_onenote(params: SaveToOnenoteInput, context: dict) -> dict:
+async def notes_create_page(params: SaveToOnenoteInput, context: dict) -> dict:
     data = await create_onenote_page(
         context["access_token"],
         section_id=params.section_id,
