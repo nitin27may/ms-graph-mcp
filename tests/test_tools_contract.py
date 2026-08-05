@@ -21,7 +21,6 @@ so no file silently stops exposing its tools.
 from __future__ import annotations
 
 import ast
-import asyncio
 import importlib
 import inspect
 from pathlib import Path
@@ -61,7 +60,7 @@ def _tool_cases():
 @pytest.mark.parametrize("mod_path,fn", list(_tool_cases()))
 class TestToolContract:
     def test_tool_is_async(self, mod_path, fn):
-        assert asyncio.iscoroutinefunction(fn), (
+        assert inspect.iscoroutinefunction(fn), (
             f"{mod_path}.{fn.__name__} must be async — tool registry only awaits coroutines"
         )
 
