@@ -251,6 +251,7 @@ Everything else, including the `env` block, stays the same.
 | `GRAPH_MCP_SCOPES` | Comma-separated delegated scopes to request. Defaults to a read-only set. |
 | `GRAPH_MCP_TOOLSETS` | Which tool profiles to expose. Defaults to `core`. See below. |
 | `GRAPH_MCP_WRITE_SCOPE` | `true` to expose the 23 write tools. **Default off.** |
+| `GRAPH_MCP_DISABLE_SSL_VERIFY` | `true` to skip TLS certificate verification for Graph HTTP calls. Use only as a corporate-proxy workaround; see troubleshooting. |
 | `GRAPH_MCP_USER_EMAIL` | Caller identity, used for tenant-scoping in some tools. Optional. |
 | `GRAPH_MCP_ACCESS_TOKEN` | A pre-acquired delegated token, instead of signing in. For CI. |
 | `GRAPH_MCP_FORCE_DEVICE_CODE` | `true` to skip the browser and always use device-code sign-in. |
@@ -276,6 +277,49 @@ GRAPH_MCP_WRITE_SCOPE=true
 | `AADSTS53003`, or "You cannot access this right now" **after** a successful sign-in | A Conditional Access policy requires a registered or compliant device. See below. |
 | Client shows "server disconnected" | Run the same command in a terminal; startup errors go to stderr and the client usually hides them. |
 | `421 Misdirected Request` from a hosted deployment | `GRAPH_MCP_RESOURCE_URL` is not set, so the transport trusts only localhost. See [running hosted](#set-graph_mcp_resource_url-when-you-deploy-behind-a-proxy). |
+| `[SSL: CERTIFICATE_VERIFY_FAILED]` when calling Graph tools | A TLS-inspecting proxy (Netskope/Zscaler/etc.) is resigning Graph traffic with a certificate chain your Python/OpenSSL runtime does not trust. |
+
+#### SSL certificate verify failures behind corporate proxies
+
+When this server calls Microsoft Graph, `httpx` validates the TLS chain using the Python/OpenSSL
+trust store of the process running `ms-graph-mcp`.
+
+In corporate networks with TLS inspection, Graph certificates are often re-issued by a proxy CA.
+If that CA chain is not accepted by your runtime, Graph calls fail with errors like:
+
+```text
+[SSL: CERTIFICATE_VERIFY_FAILED] self-signed certificate in certificate chain
+```
+
+or
+
+```text
+[SSL: CERTIFICATE_VERIFY_FAILED] Basic Constraints of CA cert not marked critical
+```
+
+Use this workaround only when you have confirmed proxy-related TLS interception and cannot quickly
+repair trust-chain validation:
+
+```jsonc
+"GRAPH_MCP_DISABLE_SSL_VERIFY": "true"
+```
+
+Where to set it:
+
+- VS Code workspace config (`.vscode/mcp.json`) under the server `env` block.
+- User-level MCP config for clients that support per-server environment variables.
+
+Security trade-off:
+
+- This disables certificate validation for Graph HTTP calls from this server process.
+- It reduces protection against machine-in-the-middle attacks and should be treated as a temporary
+  compatibility escape hatch, not a default posture.
+
+Preferred long-term fix:
+
+1. Install and trust the corporate proxy CA chain in the runtime trust store used by Python/OpenSSL.
+2. Remove `GRAPH_MCP_DISABLE_SSL_VERIFY` (or set it back to `false`).
+3. Restart the MCP client/server process and verify Graph calls succeed with TLS verification on.
 
 #### AADSTS53003 — blocked by Conditional Access
 
