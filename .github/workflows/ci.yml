@@ -180,20 +180,38 @@ jobs:
               sys.exit(f"::error::only {len(tools)} tools advertised; expected the full read tier")
           PYEOF
 
-      # The token is never used — tools/list makes no Graph call — but its
-      # presence stops the server attempting an interactive sign-in it cannot
-      # complete on a runner.
+      # A call with no credentials must not reach Graph. Inspector reports a
+      # failing tool by exiting non-zero and printing {"error": {"code":
+      # "tool_is_error"}} rather than the tool's own result, so the run is
+      # allowed to fail and both shapes are accepted — older versions pass the
+      # raw CallToolResult straight through. Either one proves the point; what
+      # would fail the check is a *successful* call.
       - name: a tool call fails closed without credentials
         run: |
+          set +e
           npx -y @modelcontextprotocol/inspector --cli \
             uv run ms-graph-mcp \
-            --method tools/call --tool-name people_get_my_profile > /tmp/call.json
+            --method tools/call --tool-name people_get_my_profile > /tmp/call.json 2>/dev/null
+          set -e
+
           python - <<'PYEOF'
           import json, pathlib, sys
 
-          result = json.loads(pathlib.Path("/tmp/call.json").read_text())
+          raw = pathlib.Path("/tmp/call.json").read_text().strip()
+          if not raw:
+              sys.exit("::error::no output from the tool call")
+          result = json.loads(raw)
+
+          # Inspector's own wrapper for a tool that returned isError.
+          if isinstance(result.get("error"), dict):
+              code = result["error"].get("code")
+              if code != "tool_is_error":
+                  sys.exit(f"::error::unexpected client error: {result['error']}")
+              print("fails closed: client reported", code)
+              raise SystemExit
+
           if not result.get("isError"):
-              sys.exit("::error::a tool call without a token did not report an error")
+              sys.exit(f"::error::a call without a token succeeded: {raw[:200]}")
 
           payload = json.loads(result["content"][0]["text"])
           if payload.get("error") != "missing_graph_token":
