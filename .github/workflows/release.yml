@@ -377,10 +377,21 @@ jobs:
         run: |
           PRERELEASE=""
           if [[ "$GITHUB_REF_NAME" == *-rc* ]]; then PRERELEASE="--prerelease"; fi
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            $PRERELEASE
+
+          # Idempotent, because re-running a release is a normal thing to do —
+          # a later job failing, or a gate that only opens once something else
+          # has shipped. `gh release create` errors on an existing tag, which
+          # would fail the re-run for a release that is already correct.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME exists; refreshing its assets."
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            # shellcheck disable=SC2086
+            gh release create "$GITHUB_REF_NAME" dist/* \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              $PRERELEASE
+          fi
 
   ghcr:
     name: publish container image
