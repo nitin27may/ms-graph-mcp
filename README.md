@@ -26,27 +26,19 @@ secret.
 
 ## Install
 
-> **Not yet on PyPI.** The package name is unclaimed and the release pipeline is in place, but
-> nothing has been published. Until the first release, install from source. The `uvx --from
-> ms-graph-mcp` commands below are what will work after publication; substitute
-> `--from git+https://github.com/nitin27may/ms-graph-mcp` today.
+> **Not on PyPI yet.** `pip install ms-graph-mcp` and `uvx --from ms-graph-mcp` will not work until
+> the first release. Run it from a clone — the Quick start below covers it, and every client config
+> in this README uses that path.
 
-```bash
-# From source (works now)
-git clone https://github.com/nitin27may/ms-graph-mcp
-cd ms-graph-mcp
-uv sync
-
-# After the first PyPI release
-uv add ms-graph-mcp
-# or
-pip install ms-graph-mcp
-```
+Requires **Python 3.12+** and [uv](https://docs.astral.sh/uv/).
 
 ## Quick start
 
-You need an **Entra ID app registration** — it takes about two minutes, and no client secret is
-involved. The server signs you in through your browser; no token is ever pasted into a config file.
+You need an **Entra ID app registration** — about two minutes. **Do not create a client secret:**
+this registers as a *public client*, which signs you in through your browser using PKCE. A secret
+on a program running on your own machine would be readable by anyone with the config file, which is
+why the flow is designed not to need one. Nothing is pasted into a config file except two ids,
+neither of which is sensitive.
 
 ### 1. Register the app
 
@@ -55,6 +47,8 @@ In the [Entra portal](https://entra.microsoft.com) → **App registrations** →
 - **Name:** anything, e.g. `ms-graph-mcp`
 - **Supported account types:** *Accounts in this organizational directory only*
 - **Redirect URI:** select **Public client/native**, value `http://localhost`
+
+Leave **Certificates & secrets** alone — you do not need anything from it.
 
 Then, on the new app:
 
@@ -69,26 +63,66 @@ Then, on the new app:
 
 Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
 
-### 2. Run it
+### 2. Get the code and run it
+
+The package is **not on PyPI yet**, so run it from a clone. Everything below assumes
+`~/workspace/ms-graph-mcp` — substitute your own path.
+
+```bash
+git clone https://github.com/nitin27may/ms-graph-mcp ~/workspace/ms-graph-mcp
+cd ~/workspace/ms-graph-mcp
+uv sync                       # creates .venv and installs everything
+```
+
+That gives you:
+
+```
+~/workspace/ms-graph-mcp/
+├── pyproject.toml            # defines the ms-graph-mcp console script
+├── uv.lock
+├── src/ms_graph_mcp/         # the server
+├── tests/
+├── docs/
+└── .venv/                    # created by uv sync
+```
+
+Check it starts:
 
 ```bash
 GRAPH_MCP_CLIENT_ID=<application-client-id> \
 GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
-  uvx --from ms-graph-mcp ms-graph-mcp
+  uv run ms-graph-mcp
 ```
 
-On first run your browser opens for normal Microsoft 365 sign-in — SSO, MFA and conditional access
-all apply as usual. The result is cached in `~/.ms-graph-mcp/token_cache.json` (owner-readable
-only), so later runs start silently. Over SSH or in a container it falls back to device-code
-sign-in and prints a code to stderr.
+Your browser opens for Microsoft 365 sign-in. The process then sits waiting for a client to speak
+MCP to it over stdin — that is correct; press Ctrl-C. The sign-in is cached in
+`~/.ms-graph-mcp/token_cache.json` (owner-readable only), so it will not prompt again.
+
+To run it from anywhere — which is what an MCP client needs, since it will not be launched from
+this directory — use `--directory`:
+
+```bash
+uv run --directory ~/workspace/ms-graph-mcp ms-graph-mcp
+```
+
+**MCP clients need an absolute path.** They do not inherit your shell's working directory, and most
+do not expand `~`. Get yours with:
+
+```bash
+cd ~/workspace/ms-graph-mcp && pwd
+# /Users/you/workspace/ms-graph-mcp
+```
 
 ## Add it to your client
 
-The same three settings work everywhere. **No access token goes in these files.**
+Every example uses the local clone, because that is what works today. **Replace
+`/Users/you/workspace/ms-graph-mcp` with your own absolute path** — the output of `pwd` in the
+clone. After the first PyPI release you can swap the command for `uvx` (see the end of this
+section).
 
 ### VS Code
 
-`.vscode/mcp.json` in your workspace, or **MCP: Open User Configuration** for all projects:
+Create `.vscode/mcp.json` in whichever workspace you want it available in:
 
 ```jsonc
 {
@@ -99,8 +133,12 @@ The same three settings work everywhere. **No access token goes in these files.*
   "servers": {
     "ms-graph": {
       "type": "stdio",
-      "command": "uvx",
-      "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/Users/you/workspace/ms-graph-mcp",
+        "ms-graph-mcp"
+      ],
       "env": {
         "GRAPH_MCP_CLIENT_ID": "${input:clientId}",
         "GRAPH_MCP_TENANT_ID": "${input:tenantId}"
@@ -110,8 +148,12 @@ The same three settings work everywhere. **No access token goes in these files.*
 }
 ```
 
-The `inputs` block means VS Code prompts once and stores the values itself, so the file is safe to
-commit. Hardcode the two ids instead if you prefer — neither is a secret.
+Reload the window. VS Code prompts once for the two ids and remembers them, so this file is safe to
+commit. Open the Chat view, switch to **Agent** mode, and the tools appear under the tools picker.
+`MCP: List Servers` shows status and output if it does not connect.
+
+For every workspace rather than one, run **MCP: Open User Configuration** and put the same
+`servers` block there.
 
 ### Claude Code
 
@@ -119,22 +161,26 @@ commit. Hardcode the two ids instead if you prefer — neither is a secret.
 claude mcp add ms-graph \
   --env GRAPH_MCP_CLIENT_ID=<application-client-id> \
   --env GRAPH_MCP_TENANT_ID=<directory-tenant-id> \
-  -- uvx --from ms-graph-mcp ms-graph-mcp
+  -- uv run --directory /Users/you/workspace/ms-graph-mcp ms-graph-mcp
 ```
 
-Then `/mcp` in Claude Code to check it connected.
+Then `/mcp` inside Claude Code to confirm it connected and see the tool list.
 
 ### Claude Desktop
 
-`claude_desktop_config.json` — macOS
-`~/Library/Application Support/Claude/`, Windows `%APPDATA%\Claude\`:
+`claude_desktop_config.json` — macOS `~/Library/Application Support/Claude/`,
+Windows `%APPDATA%\Claude\`:
 
 ```jsonc
 {
   "mcpServers": {
     "ms-graph": {
-      "command": "uvx",
-      "args": ["--from", "ms-graph-mcp", "ms-graph-mcp"],
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "/Users/you/workspace/ms-graph-mcp",
+        "ms-graph-mcp"
+      ],
       "env": {
         "GRAPH_MCP_CLIENT_ID": "<application-client-id>",
         "GRAPH_MCP_TENANT_ID": "<directory-tenant-id>"
@@ -144,23 +190,46 @@ Then `/mcp` in Claude Code to check it connected.
 }
 ```
 
+Restart Claude Desktop fully — quit it, do not just close the window.
+
 ### MCP Inspector
 
-Useful for checking the server independently of any client:
+The quickest way to check the server independently of any client:
 
 ```bash
 GRAPH_MCP_CLIENT_ID=… GRAPH_MCP_TENANT_ID=… \
-  npx @modelcontextprotocol/inspector uvx --from ms-graph-mcp ms-graph-mcp
+  npx @modelcontextprotocol/inspector \
+  uv run --directory /Users/you/workspace/ms-graph-mcp ms-graph-mcp
 ```
 
-### Running from a clone
+Needs Node 22.19+. It opens a browser UI where you can list tools and call them by hand — worth
+doing before blaming your client.
 
-Substitute the command while developing:
+### Two things that catch people out
+
+**`uv` must be on the client's PATH.** GUI apps launched from Finder or the Dock do not inherit
+your shell's PATH, so a client can fail to start the server with an unhelpful error. If that
+happens, use the absolute path to `uv`:
+
+```bash
+which uv     # e.g. /Users/you/.local/bin/uv
+```
+
+and put that in `"command"` instead of `"uv"`.
+
+**`--directory` is not optional.** Without it, `uv run` resolves against whatever directory the
+client happened to launch from, which will not be the project.
+
+### After the first PyPI release
+
+Once published, no clone is needed — replace the command and args with:
 
 ```jsonc
-"command": "uv",
-"args": ["run", "--directory", "/path/to/ms-graph-mcp", "ms-graph-mcp"]
+"command": "uvx",
+"args": ["--from", "ms-graph-mcp", "ms-graph-mcp"]
 ```
+
+Everything else, including the `env` block, stays the same.
 
 ### stdio settings
 
@@ -197,7 +266,8 @@ GRAPH_MCP_WRITE_SCOPE=true
 ## Streamable HTTP — hosted deployments
 
 ```bash
-GRAPH_MCP_PORT=8094 uvx --from ms-graph-mcp ms-graph-mcp-http
+# from a clone
+GRAPH_MCP_PORT=8094 uv run --directory /path/to/ms-graph-mcp ms-graph-mcp-http
 curl -s localhost:8094/health
 ```
 
@@ -231,29 +301,66 @@ events = await calendar.calendar_list_upcoming_events(params, {"access_token": t
 
 ## Configuration
 
-All settings are read from the environment (a `.env` in the working directory is picked up).
-`GRAPH_MCP_*` is canonical; the three app-registration fields also accept the conventional
-`AZURE_AD_*` names.
+All settings are read from the environment; a `.env` in the working directory is picked up.
+
+**Which settings you need depends entirely on how you run it.** The two deployment shapes use
+different authentication models, and mixing them up is the most common setup mistake.
+
+### Running locally (stdio) — you are the user
+
+The server signs *you* in. It is a **public client**, so there is **no client secret** — a program
+running on your own machine cannot keep one, since anyone with the config file or the process has
+it. MSAL uses PKCE instead.
 
 | Setting | Env | Default |
 |---|---|---|
-| TLS verification off (corporate proxy) | `GRAPH_MCP_DISABLE_SSL_VERIFY` | `false` |
-| Recipient-domain allowlist for send/propose email | `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` | `""` (no gate) |
-| Max files per browse | `GRAPH_MCP_BROWSE_MAX_FILES` | `500` |
-| Remove the write tier entirely | `GRAPH_MCP_READ_ONLY` | `false` |
+| Application (client) id | `GRAPH_MCP_CLIENT_ID` / `AZURE_AD_CLIENT_ID` | `""` |
+| Directory (tenant) id | `GRAPH_MCP_TENANT_ID` / `AZURE_AD_TENANT_ID` | `common` |
+| Delegated scopes to request at sign-in | `GRAPH_MCP_SCOPES` | read-only set |
+| Expose the write tools | `GRAPH_MCP_WRITE_SCOPE` | `false` |
+| Caller identity, for tenant-scoping | `GRAPH_MCP_USER_EMAIL` | `""` |
+| Always use device code, never the browser | `GRAPH_MCP_FORCE_DEVICE_CODE` | `false` |
+| Where the token cache lives | `GRAPH_MCP_CACHE_DIR` | `~/.ms-graph-mcp` |
+| Pre-acquired token instead of signing in (CI) | `GRAPH_MCP_ACCESS_TOKEN` | `""` |
+
+> **`GRAPH_MCP_CLIENT_SECRET` is not used here and should not be set.** It belongs to the hosted
+> shape below. If you find yourself creating a client secret to run this locally, something has
+> gone wrong — the app registration only needs to be a public client with `http://localhost` as its
+> redirect URI.
+
+### Running hosted (Streamable HTTP) — the server acts for many users
+
+Callers present a token; the server validates it and may exchange it. This is where a client secret
+belongs, because the server is a confidential client running somewhere you control.
+
+| Setting | Env | Default |
+|---|---|---|
+| Verify JWT signatures against JWKS | `GRAPH_MCP_JWT_VERIFY` | `true` |
 | Shared secret for machine callers | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) |
-| Tenant id | `GRAPH_MCP_TENANT_ID` / `AZURE_AD_TENANT_ID` | `""` |
-| Client id | `GRAPH_MCP_CLIENT_ID` / `AZURE_AD_CLIENT_ID` | `""` |
-| Client secret | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
-| Verify JWT signatures (JWKS) | `GRAPH_MCP_JWT_VERIFY` | `true` |
 | Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `false` |
+| Client secret, for the OBO exchange | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
 | Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
-| Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `https://graph.microsoft.com/.default` |
+| Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `…/.default` |
 | HTTP port | `GRAPH_MCP_PORT` | `8094` |
+
+`GRAPH_MCP_CLIENT_ID` and `GRAPH_MCP_TENANT_ID` are needed in both shapes.
 
 **`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity —
 with it off, token signatures are not verified. There is deliberately no setting that skips
 authentication altogether; see [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md).
+
+### Behaviour and safety
+
+| Setting | Env | Default |
+|---|---|---|
+| Remove the write tier entirely | `GRAPH_MCP_READ_ONLY` | `false` |
+| Recipient-domain allowlist for sending and forwarding mail | `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` | `""` (no gate) |
+| Max files per browse | `GRAPH_MCP_BROWSE_MAX_FILES` | `500` |
+| TLS verification off (corporate proxy) | `GRAPH_MCP_DISABLE_SSL_VERIFY` | `false` |
+
+`GRAPH_MCP_READ_ONLY` is stronger than leaving `GRAPH_MCP_WRITE_SCOPE` off: it removes the write
+tools from the deployment entirely, so no caller can reach them whatever they ask for. See
+[SECURITY.md](SECURITY.md) for what to change before exposing this beyond localhost.
 
 ## Tool surface
 
