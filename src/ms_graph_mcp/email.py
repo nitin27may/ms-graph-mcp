@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get, graph_post_no_content
+from ms_graph_mcp.client import graph_get, graph_patch, graph_post_no_content
 from ms_graph_mcp.config import get_config
+from ms_graph_mcp.errors import graph_error_response, invalid_arguments
 from ms_graph_mcp.odata import escape_odata_string, validate_graph_id, validate_mail_folder
-from ms_graph_mcp.tooling import READ_ONLY, WRITE_CREATE, WRITE_SEND, tool
+from ms_graph_mcp.tooling import READ_ONLY, WRITE_CREATE, WRITE_SEND, WRITE_UPDATE, tool
 
 _SELECT = "id,subject,from,toRecipients,receivedDateTime,bodyPreview,importance,flag,conversationId,webLink"
 _SELECT_FULL = _SELECT + ",body"
@@ -573,3 +575,119 @@ async def mail_list_attachments(params: ListEmailAttachmentsInput, context: dict
         for a in (data.get("value") or [])
         if not a.get("isInline")
     ]
+
+
+# ── Message actions ───────────────────────────────────────────────────────────
+# reply / replyAll / forward all answer 202 with an empty body, so they go
+# through graph_post_no_content rather than graph_post.
+
+
+class ReplyEmailInput(BaseModel):
+    message_id: str = Field(description="The message id to reply to")
+    comment_html: str = Field(
+        description="Your reply text as HTML. Quoted thread is added by Graph."
+    )
+
+
+class ForwardEmailInput(BaseModel):
+    message_id: str = Field(description="The message id to forward")
+    to_recipients: list[str] = Field(description="Email addresses to forward to")
+    comment_html: str = Field(
+        default="", description="Optional note added above the forwarded message"
+    )
+
+
+class MarkEmailReadInput(BaseModel):
+    message_id: str = Field(description="The message id to change")
+    is_read: bool = Field(default=True, description="True marks read, False marks unread")
+
+
+@tool(
+    description=(
+        "Reply to an email, sending only to its original sender. Graph quotes the original message "
+        "automatically, so supply just the new text as HTML. Sends immediately — confirm the "
+        "wording with the user first. Replying is usually safer than mail_send because the "
+        "recipient is fixed by the thread and cannot be chosen. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+)
+async def mail_reply(params: ReplyEmailInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    try:
+        await graph_post_no_content(
+            token, f"/me/messages/{message_id}/reply", {"comment": params.comment_html}
+        )
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.Send", tool="mail_reply")
+    return {"status": "sent", "message_id": message_id, "recipients": "original sender"}
+
+
+@tool(
+    description=(
+        "Reply to an email, sending to the sender and everyone else on the thread. Graph quotes "
+        "the original automatically, so supply just the new text as HTML. Use mail_reply when only "
+        "the sender needs the response — reply-all on a large thread is rarely what the user "
+        "actually wants, so confirm first. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+)
+async def mail_reply_all(params: ReplyEmailInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    try:
+        await graph_post_no_content(
+            token, f"/me/messages/{message_id}/replyAll", {"comment": params.comment_html}
+        )
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.Send", tool="mail_reply_all")
+    return {"status": "sent", "message_id": message_id, "recipients": "all thread participants"}
+
+
+@tool(
+    description=(
+        "Forward an email to other people, with an optional note above it. Unlike mail_reply the "
+        "recipients are chosen by the caller, so this can send existing mail to anyone — confirm "
+        "the address list with the user before calling. Subject to the deployment's recipient "
+        "domain allowlist if one is configured. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+)
+async def mail_forward(params: ForwardEmailInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    if not params.to_recipients:
+        return invalid_arguments("Supply at least one address to forward to.")
+    # Forwarding takes caller-chosen recipients, which makes it the same
+    # exfiltration risk as mail_send — so it goes through the same gate. Reply
+    # and reply-all do not, because the thread fixes who receives them.
+    allow_error = _check_send_email_allowed_domains(params.to_recipients, [])
+    if allow_error is not None:
+        return {"error": "recipient_not_allowed", "message": allow_error, "retryable": False}
+    body = {
+        "comment": params.comment_html,
+        "toRecipients": [{"emailAddress": {"address": a}} for a in params.to_recipients],
+    }
+    try:
+        await graph_post_no_content(token, f"/me/messages/{message_id}/forward", body)
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.Send", tool="mail_forward")
+    return {"status": "sent", "message_id": message_id, "recipients": params.to_recipients}
+
+
+@tool(
+    description=(
+        "Mark an email as read or unread. Use after summarising a message the user has now seen, "
+        "or to flag something back up for attention. Changes only the read state — nothing is "
+        "sent and no other property is touched. Requires Mail.ReadWrite."
+    ),
+    annotations=WRITE_UPDATE,
+)
+async def mail_mark_read(params: MarkEmailReadInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    try:
+        await graph_patch(token, f"/me/messages/{message_id}", {"isRead": params.is_read})
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.ReadWrite", tool="mail_mark_read")
+    return {"status": "read" if params.is_read else "unread", "message_id": message_id}

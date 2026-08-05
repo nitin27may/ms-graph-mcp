@@ -23,6 +23,8 @@ Graph tools as plain async functions rather than over MCP:
 from ms_graph_mcp import (  # noqa: E402  (after config so submodules see get_config)
     calendar,
     calendar_write,
+    chats,
+    contacts,
     directory,
     email,
     files,
@@ -30,6 +32,7 @@ from ms_graph_mcp import (  # noqa: E402  (after config so submodules see get_co
     meetings,
     onenote,
     people,
+    search,
     tasks,
     tasks_write,
     teams,
@@ -45,6 +48,8 @@ __all__ = [
     # domain tool modules
     "calendar",
     "calendar_write",
+    "chats",
+    "contacts",
     "directory",
     "email",
     "files",
@@ -52,6 +57,7 @@ __all__ = [
     "meetings",
     "onenote",
     "people",
+    "search",
     "tasks",
     "tasks_write",
     "teams",

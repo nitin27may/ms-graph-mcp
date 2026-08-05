@@ -26,7 +26,13 @@ from ms_graph_mcp.tooling import ToolSpec, get_registry
 WRITE_TOOL_NAMES: tuple[str, ...] = (
     "mail_send",
     "mail_propose",
+    "mail_reply",
+    "mail_reply_all",
+    "mail_forward",
+    "mail_mark_read",
+    "chat_send_message",
     "notes_create_page",
+    "people_create_contact",
     "tasks_create_todo",
     "tasks_complete_todo",
     "tasks_update_todo",
@@ -76,8 +82,12 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "files_list_recent",
     "files_get_content",
     "files_list_shared_with_me",
+    # search
+    "search_query",
     # people
     "people_search",
+    "people_list_contacts",
+    "people_search_contacts",
     "people_get",
     "people_get_my_profile",
     # directory
@@ -90,6 +100,9 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "directory_get_group",
     # teams
     "chat_search_messages",
+    "chat_list",
+    "chat_list_messages",
+    "chat_list_members",
     "chat_list_channel_messages",
     "chat_list_teams",
     "chat_list_channels",
@@ -97,6 +110,8 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     # onenote
     "notes_list_notebooks",
     "notes_list_sections",
+    "notes_list_pages",
+    "notes_get_page_content",
     # tasks
     "tasks_list_planner_plans",
     "tasks_list_planner_buckets",

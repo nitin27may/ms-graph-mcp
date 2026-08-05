@@ -30,6 +30,19 @@ change between minor versions; breaking changes are called out explicitly.
   permission denial, so a model stops retrying a call that can never succeed.
 - `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
   `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- **Mail actions** (4 tools). `mail_reply`, `mail_reply_all`, `mail_forward`, `mail_mark_read`.
+  Forwarding is subject to the recipient-domain allowlist because the caller chooses the
+  recipients; replying is not, because the thread fixes them.
+- **Teams chats** (4 tools). `chat_list`, `chat_list_messages`, `chat_send_message`,
+  `chat_list_members` — the 1:1 and group conversations, where most Teams activity actually
+  happens. Previously only channels were reachable.
+- **Unified search** (1 tool). `search_query` over `POST /search/query`, spanning mail, calendar,
+  files, SharePoint sites and lists, and people in a single call.
+- **OneNote page reads** (2 tools). `notes_list_pages` and `notes_get_page_content` — the server
+  could write a page but not read one back.
+- **Contacts** (3 tools). `people_list_contacts`, `people_search_contacts`,
+  `people_create_contact`. The personal address book is the only place external contacts live,
+  invisible to both `people_search` and `directory_search_users`.
 - **Task writes for To Do and Planner** (5 tools). `tasks_complete_todo`, `tasks_update_todo`,
   `tasks_create_planner`, `tasks_update_planner`, `tasks_complete_planner`. Planner writes handle
   the ETag it requires on every change: each is read-then-write, and a concurrent edit comes back
