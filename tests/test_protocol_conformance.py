@@ -153,3 +153,91 @@ async def test_missing_token_fails_closed_over_the_protocol(graph_client_context
         result = await client.call_tool("get_my_profile", {})
     assert result.is_error is True
     assert json.loads(result.content[0].text)["error"] == "missing_graph_token"
+
+
+def test_tool_spec_annotations_project_onto_the_wire_type():
+    """The projection itself, independent of whether any tool uses it yet.
+
+    Phase A delivers the mechanism; Phase B applies it to the existing 60 tools.
+    This proves the mechanism so the two can be reviewed apart.
+    """
+    from ms_graph_mcp.server import _to_mcp_tool
+    from ms_graph_mcp.tooling import READ_ONLY, WRITE_SEND, ToolSpec
+
+    read = _to_mcp_tool(
+        ToolSpec(name="r", description="d", parameters={}, fn=None, annotations=READ_ONLY)
+    )
+    assert read.annotations.read_only_hint is True
+    assert read.annotations.destructive_hint is False
+    assert read.annotations.idempotent_hint is True
+    assert read.annotations.open_world_hint is True
+
+    send = _to_mcp_tool(
+        ToolSpec(name="s", description="d", parameters={}, fn=None, annotations=WRITE_SEND)
+    )
+    assert send.annotations.read_only_hint is False
+    # A retried send mails twice — this must not claim idempotence.
+    assert send.annotations.idempotent_hint is False
+
+    bare = _to_mcp_tool(ToolSpec(name="b", description="d", parameters={}, fn=None))
+    assert bare.annotations is None
+
+
+# Phase B backfills annotations onto the existing tools. strict=True means this
+# starts failing as an XPASS the moment that lands, forcing the marker's removal.
+@pytest.mark.xfail(strict=True, reason="Phase B backfill pending")
+async def test_annotations_reach_a_real_client(graph_client_context):
+    """Every advertised tool should carry hints a client can act on."""
+    graph_client_context(write_scope=True)
+    async with mcp.Client(build_graph_mcp_server()) as client:
+        result = await client.list_tools()
+
+    by_name = {t.name: t for t in result.tools}
+    unannotated = [t.name for t in result.tools if t.annotations is None]
+    assert not unannotated, f"tools reached the client with no annotations: {unannotated[:10]}"
+
+    for name in READ_TOOL_NAME_SET:
+        tool = by_name.get(name)
+        if tool is not None:
+            assert tool.annotations.read_only_hint is True, f"{name} lost its read-only hint"
+
+    for name in WRITE_TOOL_NAME_SET:
+        tool = by_name.get(name)
+        if tool is not None:
+            assert tool.annotations.read_only_hint is not True, (
+                f"{name} mutates state but reached the client marked read-only"
+            )
+
+
+async def test_a_superseded_tool_name_still_dispatches(graph_client_context, monkeypatch):
+    """Renaming must not break callers written against the previous release."""
+    from ms_graph_mcp import server as server_mod
+
+    class _AliasingRegistry:
+        def canonical_name(self, name):
+            return "get_my_profile" if name == "legacy_profile_name" else name
+
+        async def call(self, name, arguments_json, context):
+            return {"ok": True, "resolved_to": name}
+
+    monkeypatch.setattr(server_mod, "get_registry", lambda: _AliasingRegistry())
+
+    graph_client_context()
+    async with mcp.Client(build_graph_mcp_server()) as client:
+        result = await client.call_tool("legacy_profile_name", {})
+
+    payload = json.loads(result.content[0].text)
+    assert result.is_error is False
+    assert payload["resolved_to"] == "get_my_profile"
+
+
+async def test_an_unknown_name_still_fails_with_the_name_the_caller_used(
+    graph_client_context, monkeypatch
+):
+    """Canonicalisation must not make the error message unrecognisable."""
+    graph_client_context()
+    async with mcp.Client(build_graph_mcp_server()) as client:
+        result = await client.call_tool("definitely_not_a_tool", {})
+
+    assert result.is_error is True
+    assert "definitely_not_a_tool" in json.loads(result.content[0].text)["message"]

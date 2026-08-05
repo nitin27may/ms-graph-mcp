@@ -83,6 +83,12 @@ async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatc
     captured: dict = {}
 
     class _Reg:
+        # Stands in for ToolRegistry, so it honours the same interface.
+
+        def canonical_name(self, name):
+
+            return name
+
         async def call(self, name, arguments_json, context):
             captured["context"] = context
             return {"ok": True, "tool": name}

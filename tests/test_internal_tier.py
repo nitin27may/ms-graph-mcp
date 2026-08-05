@@ -75,6 +75,12 @@ async def test_dispatch_allows_internal_tool_with_scope(monkeypatch, call_tool):
     captured: dict = {}
 
     class _Reg:
+        # Stands in for ToolRegistry, so it honours the same interface.
+
+        def canonical_name(self, name):
+
+            return name
+
         async def call(self, name, arguments_json, context):
             captured["name"] = name
             return {"ok": True}
@@ -329,6 +335,12 @@ async def test_app_only_dispatch_mints_cc_token_without_user_token(monkeypatch, 
     captured: dict = {}
 
     class _Reg:
+        # Stands in for ToolRegistry, so it honours the same interface.
+
+        def canonical_name(self, name):
+
+            return name
+
         async def call(self, name, arguments_json, context):
             captured["name"] = name
             captured["access_token"] = context.get("access_token")

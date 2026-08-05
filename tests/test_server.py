@@ -64,6 +64,12 @@ async def test_dispatch_routes_to_registry_with_request_context(monkeypatch, cal
     captured: dict = {}
 
     class _FakeRegistry:
+        # Stands in for ToolRegistry, so it honours the same interface.
+
+        def canonical_name(self, name):
+
+            return name
+
         async def call(self, name, arguments_json, context):
             captured["name"] = name
             captured["arguments_json"] = arguments_json
@@ -94,6 +100,12 @@ async def test_dispatch_marks_registry_argument_errors_as_tool_errors(monkeypatc
     """
 
     class _FakeRegistry:
+        # Stands in for ToolRegistry, so it honours the same interface.
+
+        def canonical_name(self, name):
+
+            return name
+
         async def call(self, name, arguments_json, context):
             return {"error": "invalid_arguments", "message": "nope"}
 

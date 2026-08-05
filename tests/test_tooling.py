@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from enum import StrEnum
 
@@ -10,6 +11,11 @@ import pytest
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.tooling import (
+    READ_ONLY,
+    WRITE_CREATE,
+    WRITE_DESTRUCTIVE,
+    WRITE_SEND,
+    WRITE_UPDATE,
     ToolRegistry,
     ToolSpec,
     _pydantic_to_json_schema,
@@ -213,3 +219,105 @@ def test_flat_model_schema_carries_no_defs():
 def test_title_is_always_stripped():
     for model in (_Echo, _WithRefs):
         assert "title" not in _pydantic_to_json_schema(model)
+
+
+# ── annotations and aliases ───────────────────────────────────────────────────
+
+
+def test_tool_records_annotations_and_aliases():
+    with local_registry() as reg:
+
+        @tool(description="d", annotations=READ_ONLY, aliases=("old_name",))
+        async def new_name(params: _Echo, context: dict) -> str:
+            return params.text
+
+        spec = reg.get("new_name")
+        assert spec.annotations is READ_ONLY
+        assert spec.aliases == ("old_name",)
+
+
+def test_a_single_alias_may_be_given_as_a_bare_string():
+    with local_registry() as reg:
+
+        @tool(description="d", aliases="legacy")
+        async def modern(params: _Echo, context: dict) -> str:
+            return params.text
+
+        assert reg.get("modern").aliases == ("legacy",)
+
+
+def test_annotations_default_to_none_so_the_contract_test_can_catch_it():
+    """Silently defaulting to READ_ONLY would mislabel every write tool."""
+    with local_registry() as reg:
+
+        @tool(description="d")
+        async def unannotated(params: _Echo, context: dict) -> str:
+            return params.text
+
+        assert reg.get("unannotated").annotations is None
+
+
+def test_registry_resolves_an_alias_to_the_canonical_spec():
+    with local_registry() as reg:
+
+        @tool(description="d", aliases=("old_name",))
+        async def new_name(params: _Echo, context: dict) -> str:
+            return params.text
+
+        assert reg.get("old_name") is reg.get("new_name")
+        assert reg.canonical_name("old_name") == "new_name"
+        assert reg.canonical_name("new_name") == "new_name"
+        assert reg.canonical_name("nope") is None
+
+
+def test_registry_names_excludes_aliases():
+    """tools/list is built from names() — an alias there is a duplicate tool."""
+    with local_registry() as reg:
+
+        @tool(description="d", aliases=("old_name",))
+        async def new_name(params: _Echo, context: dict) -> str:
+            return params.text
+
+        assert reg.names() == ["new_name"]
+
+
+def test_alias_use_is_logged_as_deprecated(caplog):
+    with local_registry() as reg:
+
+        @tool(description="d", aliases=("old_name",))
+        async def new_name(params: _Echo, context: dict) -> str:
+            return params.text
+
+        with caplog.at_level(logging.WARNING, logger="ms_graph_mcp.tooling"):
+            reg.get("old_name")
+    assert "deprecated" in caplog.text
+    assert "new_name" in caplog.text
+
+
+def test_alias_colliding_with_a_canonical_name_is_rejected():
+    """Otherwise the alias would shadow a real tool and silently misroute calls."""
+    with local_registry():
+
+        @tool(description="d")
+        async def taken(params: _Echo, context: dict) -> str:
+            return params.text
+
+        with pytest.raises(ValueError, match="canonical name"):
+
+            @tool(description="d", aliases=("taken",))
+            async def other(params: _Echo, context: dict) -> str:
+                return params.text
+
+
+def test_the_five_annotation_presets_are_distinct_and_sane():
+    assert READ_ONLY.read_only and not READ_ONLY.destructive
+    # A retried send mails twice; a retried update lands the same state.
+    assert not WRITE_SEND.idempotent
+    assert WRITE_UPDATE.idempotent
+    assert not WRITE_CREATE.idempotent
+    assert WRITE_DESTRUCTIVE.destructive
+    for preset in (WRITE_CREATE, WRITE_UPDATE, WRITE_SEND, WRITE_DESTRUCTIVE):
+        assert not preset.read_only
+    # Everything here reaches Microsoft Graph.
+    for preset in (READ_ONLY, WRITE_CREATE, WRITE_UPDATE, WRITE_SEND, WRITE_DESTRUCTIVE):
+        assert preset.open_world

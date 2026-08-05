@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -42,12 +43,58 @@ from typing import Any, get_type_hints
 from pydantic import BaseModel, ValidationError
 
 __all__ = [
-    "ToolSpec",
+    "READ_ONLY",
+    "ToolAnnotations",
     "ToolRegistry",
-    "tool",
+    "ToolSpec",
+    "WRITE_CREATE",
+    "WRITE_DESTRUCTIVE",
+    "WRITE_SEND",
+    "WRITE_UPDATE",
     "get_registry",
     "local_registry",
+    "tool",
 ]
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ToolAnnotations:
+    """Behavioural hints a client uses to decide what needs human confirmation.
+
+    MCP's documented default for a tool that declares nothing is the most
+    cautious reading available — non-read-only, potentially destructive,
+    non-idempotent, open-world. A read tool that stays silent is therefore
+    treated as dangerous, and clients may prompt the user before it runs.
+    Declaring the hints is how a read tool gets out of that.
+
+    These are hints, not enforcement. The tier system in ``allowlists.py`` is
+    what actually stops a write happening; annotations only shape client UX.
+    Clients are explicitly told to distrust them from untrusted servers.
+    """
+
+    read_only: bool
+    destructive: bool
+    idempotent: bool
+    # Every tool here talks to Microsoft Graph, so this is always True. Kept as
+    # a field rather than hardcoded so a future local/offline tool can say so.
+    open_world: bool = True
+
+
+# The five shapes every tool in this package falls into. Using these instead of
+# spelling out four booleans per tool keeps the semantics consistent — and makes
+# a miscategorised tool visible in review as the wrong constant name.
+READ_ONLY = ToolAnnotations(read_only=True, destructive=False, idempotent=True)
+#: Creates something new. Not idempotent — calling twice creates two.
+WRITE_CREATE = ToolAnnotations(read_only=False, destructive=False, idempotent=False)
+#: Sets fields on something that exists. Same call twice lands the same state.
+WRITE_UPDATE = ToolAnnotations(read_only=False, destructive=False, idempotent=True)
+#: Sends a message. Deliberately NOT idempotent: a retry mails or posts twice.
+WRITE_SEND = ToolAnnotations(read_only=False, destructive=False, idempotent=False)
+#: Withdraws something already visible to other people (e.g. cancelling a meeting).
+WRITE_DESTRUCTIVE = ToolAnnotations(read_only=False, destructive=True, idempotent=True)
 
 
 @dataclass
@@ -58,6 +105,10 @@ class ToolSpec:
     description: str
     parameters: dict[str, Any]  # JSON Schema of the Pydantic input model
     fn: Callable
+    annotations: ToolAnnotations | None = None
+    #: Superseded names that still dispatch. Advertised nowhere — see
+    #: ``ToolRegistry.register``.
+    aliases: tuple[str, ...] = ()
 
 
 def _schema_has_ref(node: Any) -> bool:
@@ -101,7 +152,12 @@ def _summarize_validation_error(exc: ValidationError) -> list[str]:
     return out
 
 
-def tool(description: str | None = None):
+def tool(
+    description: str | None = None,
+    *,
+    annotations: ToolAnnotations | None = None,
+    aliases: tuple[str, ...] | str = (),
+):
     """
     Decorator that marks an async function as an agent tool and registers it.
 
@@ -111,8 +167,17 @@ def tool(description: str | None = None):
       - Return a JSON-serialisable value
 
     Args:
-        description: Human-readable description sent to the LLM as the tool's purpose.
-                     If omitted, the function docstring is used.
+        description: What the tool does, when to use it, what it returns, and how
+                     it differs from neighbouring tools. This is the only thing a
+                     model has to choose by, so terseness here is not a saving —
+                     it is the main cause of mis-selection. Aim for 200–400 chars.
+                     Falls back to the docstring.
+        annotations: One of the module-level constants (``READ_ONLY``,
+                     ``WRITE_CREATE``, ``WRITE_UPDATE``, ``WRITE_SEND``,
+                     ``WRITE_DESTRUCTIVE``). Omitting it means clients apply MCP's
+                     most cautious defaults and may prompt the user before a
+                     harmless read.
+        aliases:     Superseded names that must keep dispatching. Not advertised.
     """
 
     def decorator(fn: Callable) -> Callable:
@@ -144,11 +209,14 @@ def tool(description: str | None = None):
                 f"got {first_param_type}"
             )
 
+        alias_tuple = (aliases,) if isinstance(aliases, str) else tuple(aliases)
         spec = ToolSpec(
             name=fn.__name__,
             description=fn_description,
             parameters=_pydantic_to_json_schema(first_param_type),
             fn=fn,
+            annotations=annotations,
+            aliases=alias_tuple,
         )
         # Attach spec to function for easy access
         fn._tool_spec = spec  # type: ignore[attr-defined]
@@ -164,16 +232,53 @@ def tool(description: str | None = None):
 
 
 class ToolRegistry:
-    """Registry of @tool-decorated functions."""
+    """Registry of @tool-decorated functions.
+
+    Aliases are held in a *separate* map from canonical names. Keeping them apart
+    is what lets ``tools/list`` advertise the canonical surface while
+    ``tools/call`` still honours a superseded name: iterating ``_tools`` can
+    never accidentally emit a deprecated duplicate.
+    """
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
+        self._aliases: dict[str, str] = {}
 
     def register(self, spec: ToolSpec) -> None:
         self._tools[spec.name] = spec
+        for alias in spec.aliases:
+            if alias in self._tools:
+                raise ValueError(
+                    f"tool '{spec.name}' claims alias '{alias}', which is another tool's "
+                    "canonical name"
+                )
+            self._aliases[alias] = spec.name
 
     def get(self, name: str) -> ToolSpec | None:
-        return self._tools.get(name)
+        """Resolve a canonical name, falling back to the alias map."""
+        spec = self._tools.get(name)
+        if spec is not None:
+            return spec
+        canonical = self._aliases.get(name)
+        if canonical is None:
+            return None
+        logger.warning(
+            "tool '%s' is a deprecated name for '%s'; it will stop working in a future "
+            "release. Update the caller.",
+            name,
+            canonical,
+        )
+        return self._tools.get(canonical)
+
+    def canonical_name(self, name: str) -> str | None:
+        """The canonical name for ``name``, whether it is canonical or an alias."""
+        if name in self._tools:
+            return name
+        return self._aliases.get(name)
+
+    def names(self) -> list[str]:
+        """Canonical names only — never aliases."""
+        return list(self._tools)
 
     def openai_specs(self, tools: list[Callable]) -> list[dict[str, Any]]:
         """

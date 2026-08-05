@@ -151,3 +151,131 @@ class TestPackageLayout:
                     if name.split(".")[0] in forbidden:
                         offenders.append(f"{py.name}:{node.lineno} → {name}")
         assert not offenders, "package reaches outside itself: " + "; ".join(offenders)
+
+
+class TestToolQualityContract:
+    """Selection-quality rules, enforced rather than documented.
+
+    A model chooses a tool from its name, description and annotations alone. Two
+    failures are invisible until an agent misbehaves in production:
+
+      * A description too short to distinguish the tool from its neighbours.
+        `search_people`, `search_users` and `search_contacts` read three
+        different data sources; at 40 characters each, nothing tells them apart.
+      * Missing annotations. MCP's documented default for a tool that declares
+        none is "non-read-only, potentially destructive, non-idempotent,
+        open-world" — so a client may prompt the user before a harmless read.
+
+    These are tests rather than review notes because a 90-tool surface only stays
+    consistent if drift breaks the build.
+    """
+
+    # Published guidance is 200-400 characters: enough to say what it does, when
+    # to use it, what comes back, and how it differs from its neighbour.
+    MIN_DESCRIPTION = 200
+    MAX_DESCRIPTION = 400
+
+    def _agent_specs(self):
+        from ms_graph_mcp.allowlists import READ_TOOL_NAMES, WRITE_TOOL_NAMES
+        from ms_graph_mcp.tooling import get_registry
+
+        registry = get_registry()
+        return [(n, registry.get(n)) for n in (*READ_TOOL_NAMES, *WRITE_TOOL_NAMES)]
+
+    # Phase B backfills the existing 60 tools. Until it lands this fails by
+    # design — it IS the backlog, expressed as a test rather than a note.
+    # strict=True means the day Phase B fixes it, an XPASS breaks the build
+    # and forces this marker to be deleted. It cannot be quietly forgotten.
+    @pytest.mark.xfail(strict=True, reason="Phase B backfill pending")
+    def test_every_agent_tool_declares_annotations(self):
+        missing = [name for name, spec in self._agent_specs() if spec.annotations is None]
+        assert not missing, (
+            f"{len(missing)} tools declare no annotations, so clients treat them as "
+            f"potentially destructive: {sorted(missing)[:10]}"
+        )
+
+    def test_read_tools_are_annotated_read_only(self):
+        from ms_graph_mcp.allowlists import READ_TOOL_NAMES
+        from ms_graph_mcp.tooling import get_registry
+
+        registry = get_registry()
+        wrong = [
+            n
+            for n in READ_TOOL_NAMES
+            if (spec := registry.get(n)).annotations is not None and not spec.annotations.read_only
+        ]
+        assert not wrong, f"read-tier tools not marked read-only: {wrong}"
+
+    def test_write_tools_are_not_annotated_read_only(self):
+        """A mutation marked read-only would skip the client's confirmation step."""
+        from ms_graph_mcp.allowlists import WRITE_TOOL_NAMES
+        from ms_graph_mcp.tooling import get_registry
+
+        registry = get_registry()
+        wrong = [
+            n
+            for n in WRITE_TOOL_NAMES
+            if (spec := registry.get(n)).annotations is not None and spec.annotations.read_only
+        ]
+        assert not wrong, f"write-tier tools marked read-only: {wrong}"
+
+    # Phase B backfills the existing 60 tools. Until it lands this fails by
+    # design — it IS the backlog, expressed as a test rather than a note.
+    # strict=True means the day Phase B fixes it, an XPASS breaks the build
+    # and forces this marker to be deleted. It cannot be quietly forgotten.
+    @pytest.mark.xfail(strict=True, reason="Phase B backfill pending")
+    def test_descriptions_are_long_enough_to_choose_between(self):
+        short = [
+            f"{name} ({len(spec.description)})"
+            for name, spec in self._agent_specs()
+            if len(spec.description) < self.MIN_DESCRIPTION
+        ]
+        assert not short, (
+            f"{len(short)} descriptions are under {self.MIN_DESCRIPTION} chars, which degrades "
+            f"tool selection: {sorted(short)[:10]}"
+        )
+
+    def test_descriptions_are_not_bloated(self):
+        long = [
+            f"{name} ({len(spec.description)})"
+            for name, spec in self._agent_specs()
+            if len(spec.description) > self.MAX_DESCRIPTION
+        ]
+        assert not long, f"descriptions over {self.MAX_DESCRIPTION} chars: {sorted(long)}"
+
+
+class TestAliasContract:
+    """Superseded names keep dispatching but are never advertised."""
+
+    def test_aliases_are_absent_from_the_registry_name_list(self):
+        from ms_graph_mcp.tooling import get_registry
+
+        registry = get_registry()
+        advertised = set(registry.names())
+        for name in advertised:
+            for alias in registry.get(name).aliases:
+                assert alias not in advertised, (
+                    f"alias '{alias}' is being advertised alongside its canonical name '{name}' — "
+                    "clients would see two tools that do the same thing"
+                )
+
+    def test_alias_resolves_to_its_canonical_spec(self):
+        from ms_graph_mcp.tooling import get_registry
+
+        registry = get_registry()
+        for name in registry.names():
+            for alias in registry.get(name).aliases:
+                assert registry.canonical_name(alias) == name
+                assert registry.get(alias) is registry.get(name)
+
+    def test_no_two_tools_claim_the_same_alias(self):
+        from ms_graph_mcp.tooling import get_registry
+
+        registry = get_registry()
+        seen: dict[str, str] = {}
+        for name in registry.names():
+            for alias in registry.get(name).aliases:
+                assert alias not in seen, (
+                    f"alias '{alias}' claimed by both '{seen[alias]}' and '{name}'"
+                )
+                seen[alias] = name

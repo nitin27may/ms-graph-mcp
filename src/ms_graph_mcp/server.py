@@ -65,10 +65,26 @@ _TOOLS_CACHE_SCOPE = "public"
 
 
 def _to_mcp_tool(spec: ToolSpec) -> types.Tool:
+    """Project a registry ToolSpec onto the wire type.
+
+    Annotations are what a client uses to decide whether a call needs human
+    confirmation. A tool that declares none gets MCP's most cautious defaults —
+    potentially destructive, non-idempotent — so an unannotated read tool can
+    make a client prompt the user before reading a calendar.
+    """
+    annotations = None
+    if spec.annotations is not None:
+        annotations = types.ToolAnnotations(
+            readOnlyHint=spec.annotations.read_only,
+            destructiveHint=spec.annotations.destructive,
+            idempotentHint=spec.annotations.idempotent,
+            openWorldHint=spec.annotations.open_world,
+        )
     return types.Tool(
         name=spec.name,
         description=spec.description,
         inputSchema=spec.parameters,
+        annotations=annotations,
     )
 
 
@@ -130,13 +146,19 @@ async def dispatch_graph_tool(
     - A write tool called without write scope is rejected.
     - A missing Graph token is refused rather than calling Graph unauthed.
     """
-    name = params.name
     arguments = params.arguments
+
+    # Resolve a superseded name to its canonical one before anything else. The
+    # allowlists and every tier check below are written in canonical names only,
+    # so an alias reaching them would be rejected as unknown. Advertised names
+    # are always canonical — an alias only ever arrives from a caller that was
+    # written against an older release.
+    name = get_registry().canonical_name(params.name) or params.name
 
     if name not in ALL_TOOL_NAME_SET:
         return _error_result(
             "tool_not_available",
-            f"Tool '{name}' is not exposed by graph-mcp.",
+            f"Tool '{params.name}' is not exposed by graph-mcp.",
         )
 
     # Gate the internal (deterministic) tier — callable only by trusted internal

@@ -102,6 +102,29 @@ Any caller-supplied value interpolated into a Graph path or an OData `$filter` m
 `src/ms_graph_mcp/odata.py` — `validate_graph_id`, `validate_mail_folder`, `validate_task_status`,
 `escape_odata_string`. Do not hand-roll the escaping.
 
+### Tool quality rules — enforced by `tests/test_tools_contract.py`
+
+These are tests, not preferences. A 90-tool surface only stays coherent if drift breaks the build.
+
+- **Every tool declares annotations.** Pass one of the five presets from `tooling.py`:
+  `READ_ONLY`, `WRITE_CREATE`, `WRITE_UPDATE`, `WRITE_SEND`, `WRITE_DESTRUCTIVE`. A tool that
+  declares nothing gets MCP's most cautious defaults — potentially destructive, non-idempotent — so
+  an unannotated read tool can make a client prompt the user before reading a calendar.
+  `WRITE_SEND` is deliberately not idempotent: a retried send mails twice.
+- **Descriptions are 200–400 characters.** Say what it does, when to use it, what it returns, **how
+  it differs from the neighbouring tool**, and the delegated permission it needs. This is the only
+  thing a model chooses by; terseness is not a token saving, it is the main cause of mis-selection.
+  `people_search` / `directory_search_users` / `people_list_contacts` read three different data
+  sources and are the case that most needs the differentiation.
+- **Errors come from `errors.py`, never ad-hoc dicts.** `scope_denied`, `throttled`, `not_found`,
+  `conflict`, `invalid_arguments`, `upstream_error`, and `graph_error_response` to map an
+  `httpx.HTTPStatusError`. Every one carries `retryable`, which is what stops a model looping on a
+  403. Return them — never raise: a raised exception becomes a JSON-RPC protocol error, which
+  clients are told *not* to feed back to the model.
+- **Renames keep the old name.** Pass `aliases=("old_name",)`. The registry indexes aliases
+  separately from canonical names, so `tools/list` advertises only the canonical name while
+  `tools/call` still honours the old one and logs a deprecation warning.
+
 ## The three tiers
 
 | Tier | Count | Exposed when |
