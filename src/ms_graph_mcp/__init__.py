@@ -31,6 +31,7 @@ from ms_graph_mcp import (  # noqa: E402  (after config so submodules see get_co
     onenote,
     people,
     tasks,
+    tasks_write,
     teams,
 )
 from ms_graph_mcp.config import GraphMcpConfig, get_config, reset_config, set_config
@@ -52,5 +53,6 @@ __all__ = [
     "onenote",
     "people",
     "tasks",
+    "tasks_write",
     "teams",
 ]

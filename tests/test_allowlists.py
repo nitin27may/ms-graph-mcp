@@ -26,7 +26,7 @@ def test_allowlist_count_is_stable():
     # A regression guard so adding or dropping a tool is a deliberate edit
     # rather than an accident. Bump these when you mean to.
     assert len(READ_TOOL_NAMES) == 45
-    assert len(WRITE_TOOL_NAMES) == 12
+    assert len(WRITE_TOOL_NAMES) == 17
 
 
 def test_resolve_read_tools_returns_registered_specs():

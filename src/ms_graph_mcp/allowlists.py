@@ -28,6 +28,11 @@ WRITE_TOOL_NAMES: tuple[str, ...] = (
     "mail_propose",
     "notes_create_page",
     "tasks_create_todo",
+    "tasks_complete_todo",
+    "tasks_update_todo",
+    "tasks_create_planner",
+    "tasks_update_planner",
+    "tasks_complete_planner",
     # calendar
     "calendar_create_event",
     "calendar_update_event",

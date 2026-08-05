@@ -30,6 +30,10 @@ change between minor versions; breaking changes are called out explicitly.
   permission denial, so a model stops retrying a call that can never succeed.
 - `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
   `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- **Task writes for To Do and Planner** (5 tools). `tasks_complete_todo`, `tasks_update_todo`,
+  `tasks_create_planner`, `tasks_update_planner`, `tasks_complete_planner`. Planner writes handle
+  the ETag it requires on every change: each is read-then-write, and a concurrent edit comes back
+  as a retryable `CONFLICT` rather than silently overwriting someone.
 - **Calendar write and scheduling** (6 tools). `calendar_create_event`, `calendar_update_event`,
   `calendar_cancel_event` and `calendar_respond_to_event` in the write tier;
   `calendar_find_meeting_times` and `calendar_get_free_busy` in the **read** tier — both are POST
