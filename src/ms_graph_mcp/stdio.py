@@ -27,6 +27,7 @@ from mcp.server.stdio import stdio_server
 
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.context import current_request_context
+from ms_graph_mcp.logging_setup import configure_logging
 from ms_graph_mcp.server import build_graph_mcp_server
 
 
@@ -36,6 +37,10 @@ def _build_context() -> dict:
     context: dict = {
         "user_email": os.getenv("GRAPH_MCP_USER_EMAIL", ""),
         "write_scope": os.getenv("GRAPH_MCP_WRITE_SCOPE", "").lower() == "true",
+        # Lets dispatch phrase token errors for the transport in use: over stdio
+        # the fix is an env var, over HTTP it is a header, and naming the wrong
+        # one sends the reader looking for something that does not exist.
+        "transport": "stdio",
     }
 
     static_token = os.getenv("GRAPH_MCP_ACCESS_TOKEN", "")
@@ -80,4 +85,5 @@ async def _amain() -> None:
 
 def main() -> None:
     """Console entry point (``ms-graph-mcp``) — run the stdio server."""
+    configure_logging()
     anyio.run(_amain)

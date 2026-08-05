@@ -242,10 +242,18 @@ async def dispatch_graph_tool(
             return _error_result("sign_in_failed", f"Could not obtain a Graph token: {exc}")
 
     if not context.get("access_token"):
+        # Name the fix for the transport actually in use. Telling a stdio user
+        # to set an HTTP header sends them looking for something that does not
+        # exist there — the two transports acquire the token differently.
+        remedy = (
+            "Set GRAPH_MCP_CLIENT_ID to sign in interactively, or "
+            "GRAPH_MCP_ACCESS_TOKEN to supply a token directly."
+            if context.get("transport") == "stdio"
+            else "Supply the token in the X-Graph-Token header."
+        )
         return _error_result(
             "missing_graph_token",
-            "No Graph access token was supplied (X-Graph-Token header); "
-            "graph-mcp cannot call Microsoft Graph without it.",
+            f"No Graph access token was supplied. {remedy}",
         )
 
     # Resource-server OBO (D4): in OBO mode the inbound token is the *user* token

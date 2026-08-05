@@ -26,6 +26,7 @@ from starlette.routing import Route
 from ms_graph_mcp.allowlists import READ_TOOL_NAMES
 from ms_graph_mcp.auth import GraphMcpAuthMiddleware
 from ms_graph_mcp.config import GraphMcpConfig, get_config, set_config
+from ms_graph_mcp.logging_setup import configure_logging
 from ms_graph_mcp.server import build_graph_mcp_server
 
 logger = logging.getLogger(__name__)
@@ -164,5 +165,8 @@ def run() -> None:
     """Console entry point (``ms-graph-mcp-http``) — run the HTTP server."""
     import uvicorn
 
+    level = configure_logging()
     port = int(os.getenv("GRAPH_MCP_PORT", str(DEFAULT_PORT)))
-    uvicorn.run(build_app(), host="0.0.0.0", port=port, log_level="info")
+    # uvicorn's access log follows the same setting rather than being pinned to
+    # info, so raising the level actually quietens the process.
+    uvicorn.run(build_app(), host="0.0.0.0", port=port, log_level=level.lower())

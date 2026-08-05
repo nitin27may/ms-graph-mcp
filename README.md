@@ -200,13 +200,21 @@ Restart Claude Desktop fully — quit it, do not just close the window.
 The quickest way to check the server independently of any client:
 
 ```bash
-GRAPH_MCP_CLIENT_ID=… GRAPH_MCP_TENANT_ID=… \
-  npx @modelcontextprotocol/inspector \
-  uv run --directory /Users/you/workspace/ms-graph-mcp ms-graph-mcp
+npx @modelcontextprotocol/inspector \
+  uv run --directory /Users/you/workspace/ms-graph-mcp ms-graph-mcp \
+  -e GRAPH_MCP_CLIENT_ID=<application-client-id> \
+  -e GRAPH_MCP_TENANT_ID=<directory-tenant-id>
 ```
 
 Needs Node 22.19+. It opens a browser UI where you can list tools and call them by hand — worth
 doing before blaming your client.
+
+> **Pass variables with `-e`, not from your shell.** Inspector does not give the server it spawns
+> your environment, so `GRAPH_MCP_CLIENT_ID=… npx @modelcontextprotocol/inspector …` starts the
+> server with *no* client id and it falls back to defaults. The `-e` flags go **after** the server
+> command.
+
+There is a scriptable `--cli` mode too — see [docs/testing.md](docs/testing.md).
 
 ### Two things that catch people out
 
@@ -429,6 +437,7 @@ something this server can work around.
 | Remove the write tier entirely | `GRAPH_MCP_READ_ONLY` | `false` |
 | Recipient-domain allowlist for sending and forwarding mail | `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` | `""` (no gate) |
 | Max files per browse | `GRAPH_MCP_BROWSE_MAX_FILES` | `500` |
+| Log level (`INFO` shows every Graph call) | `GRAPH_MCP_LOG_LEVEL` | `WARNING` |
 | TLS verification off (corporate proxy) | `GRAPH_MCP_DISABLE_SSL_VERIFY` | `false` |
 
 `GRAPH_MCP_READ_ONLY` is stronger than leaving `GRAPH_MCP_WRITE_SCOPE` off: it removes the write
@@ -509,6 +518,8 @@ server refuses to serve a partial surface instead of silently dropping a tool.
 | [CLAUDE.md](CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
 | [docs/permissions.md](docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
 | [docs/graph-coverage.md](docs/graph-coverage.md) | What this server covers of the Graph v1.0 surface, what it does not, and what is out of scope |
+| [docs/testing.md](docs/testing.md) | Running the suite, how it is arranged, and driving the server with MCP Inspector |
+| [docs/debugging.md](docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 
 ## Development
