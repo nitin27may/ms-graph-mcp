@@ -34,6 +34,29 @@ logger = logging.getLogger(__name__)
 # /health is unauthenticated so container and orchestrator probes work.
 _PUBLIC_PATHS = frozenset({"/health"})
 
+# OAuth discovery documents MUST be reachable without a token — a client that
+# has none is exactly who needs to read them. Serving RFC 9728 metadata behind
+# the very authentication it describes makes the endpoint useless.
+_PUBLIC_PATH_PREFIXES = ("/.well-known/",)
+
+
+def _www_authenticate() -> str:
+    """The Bearer challenge, pointing at the metadata document.
+
+    Empty when no public URL is configured — a pointer to a document that is
+    not served would be worse than none.
+    """
+    from ms_graph_mcp.config import get_config
+
+    cfg = get_config()
+    metadata_url = cfg.resource_metadata_url
+    if not metadata_url:
+        return ""
+    parts = [f'Bearer resource_metadata="{metadata_url}"']
+    if cfg.scopes_list:
+        parts.append(f'scope="{" ".join(cfg.scopes_list)}"')
+    return ", ".join(parts)
+
 
 class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
     """Validate the inbound token (or accept the machine bypass) and stash the
@@ -44,7 +67,8 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
         self._cfg = config
 
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in _PUBLIC_PATHS:
+        path = request.url.path
+        if path in _PUBLIC_PATHS or path.startswith(_PUBLIC_PATH_PREFIXES):
             return await call_next(request)
 
         try:
@@ -53,7 +77,16 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
             )
         except AuthError as exc:
             logger.warning("ms-graph-mcp: rejected request (%s)", exc.reason)
-            return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+            headers = {}
+            # RFC 9728 / MCP authorization: a 401 carrying a resource_metadata
+            # pointer is what lets a spec-compliant client discover how to
+            # authenticate on its own. Without it the client only knows it was
+            # refused, and every integration needs bespoke configuration.
+            if exc.status_code == 401:
+                challenge = _www_authenticate()
+                if challenge:
+                    headers["WWW-Authenticate"] = challenge
+            return JSONResponse({"error": str(exc)}, status_code=exc.status_code, headers=headers)
 
         # A machine/no-user call (shared-secret bypass) carries no Graph token —
         # leave access_token empty so dispatch fail-closes on any tool call that

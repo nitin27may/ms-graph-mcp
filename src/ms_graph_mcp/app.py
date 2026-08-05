@@ -17,6 +17,7 @@ import logging
 import os
 from collections.abc import AsyncIterator, Callable
 
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -50,6 +51,49 @@ async def _health(request: Request) -> JSONResponse:
     )
 
 
+def _allowed_origins(cfg: GraphMcpConfig) -> list[str]:
+    """Origins accepted by the transport, mirroring the allowed hosts.
+
+    Only browser clients send `Origin`; a mismatch is a 403. Both schemes are
+    listed for each host because TLS is usually terminated at the proxy, so the
+    scheme the browser used is not the one this process sees.
+    """
+    origins: list[str] = []
+    for host in cfg.allowed_hosts_list:
+        origins += [f"http://{host}", f"https://{host}"]
+    return origins
+
+
+def _discovery_routes(cfg: GraphMcpConfig) -> list[Route]:
+    """RFC 9728 protected-resource metadata, when a public URL is configured.
+
+    Uses the SDK's own implementation rather than hand-rolling the document, so
+    the shape tracks the spec as the SDK does. Only the routes are borrowed —
+    the SDK's bearer middleware is deliberately not adopted, because
+    ``GraphMcpAuthMiddleware`` additionally handles the shared-secret machine
+    principal, the write scope and the internal tier, none of which the SDK
+    knows about. Swapping enforcement would risk those for no gain in
+    discovery.
+
+    Without ``GRAPH_MCP_RESOURCE_URL`` there is nothing truthful to publish —
+    the server cannot know its own public URL behind a proxy — so discovery is
+    simply off and the transport behaves exactly as before.
+    """
+    if not cfg.resource_url:
+        return []
+    from mcp.server.auth.routes import create_protected_resource_routes
+    from pydantic import AnyHttpUrl
+
+    return list(
+        create_protected_resource_routes(
+            resource_url=AnyHttpUrl(cfg.resource_url),
+            authorization_servers=[AnyHttpUrl(cfg.authorization_server)],
+            scopes_supported=cfg.scopes_list or None,
+            resource_name=SERVICE_NAME,
+        )
+    )
+
+
 def build_app(
     cfg: GraphMcpConfig | None = None,
     *,
@@ -74,12 +118,24 @@ def build_app(
 
     # `/health` is served by the MCP app itself rather than a wrapper, so the
     # auth middleware below covers both routes and there is exactly one app.
+    routes = [Route("/health", _health, methods=["GET"])]
+    routes.extend(_discovery_routes(active))
+
     application = mcp_server.streamable_http_app(
+        # Explicit, because the SDK's inferred default is wrong here: it keys
+        # DNS-rebinding protection off the `host` argument, and the default
+        # 127.0.0.1 makes it trust localhost alone. This process binds 0.0.0.0
+        # (containers), so behind an ingress every request would arrive with a
+        # real hostname and be refused with 421 before reaching any handler.
+        transport_security=TransportSecuritySettings(
+            allowed_hosts=active.allowed_hosts_list,
+            allowed_origins=_allowed_origins(active),
+        ),
         streamable_http_path="/mcp",
         json_response=True,
         stateless_http=True,
         max_request_body_size=MAX_REQUEST_BODY_SIZE,
-        custom_starlette_routes=[Route("/health", _health, methods=["GET"])],
+        custom_starlette_routes=routes,
     )
 
     if setup_telemetry is not None or instrument_starlette is not None:

@@ -267,6 +267,7 @@ GRAPH_MCP_WRITE_SCOPE=true
 | Browser never opens | Expected over SSH or in containers — use the device code printed to stderr. |
 | `AADSTS53003`, or "You cannot access this right now" **after** a successful sign-in | A Conditional Access policy requires a registered or compliant device. See below. |
 | Client shows "server disconnected" | Run the same command in a terminal; startup errors go to stderr and the client usually hides them. |
+| `421 Misdirected Request` from a hosted deployment | `GRAPH_MCP_RESOURCE_URL` is not set, so the transport trusts only localhost. See [running hosted](#set-graph_mcp_resource_url-when-you-deploy-behind-a-proxy). |
 
 #### AADSTS53003 — blocked by Conditional Access
 
@@ -379,12 +380,47 @@ belongs, because the server is a confidential client running somewhere you contr
 | Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
 | Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `…/.default` |
 | HTTP port | `GRAPH_MCP_PORT` | `8094` |
+| Public URL, enabling OAuth discovery | `GRAPH_MCP_RESOURCE_URL` | `""` (discovery off) |
+| Additional accepted `Host` values | `GRAPH_MCP_ALLOWED_HOSTS` | `""` |
 
 `GRAPH_MCP_CLIENT_ID` and `GRAPH_MCP_TENANT_ID` are needed in both shapes.
 
 **`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity —
 with it off, token signatures are not verified. There is deliberately no setting that skips
 authentication altogether; see [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md).
+
+#### Set `GRAPH_MCP_RESOURCE_URL` when you deploy behind a proxy
+
+It does two things, and the second one will bite you if you skip it.
+
+It turns on **OAuth discovery**: the server publishes RFC 9728 metadata at
+`/.well-known/oauth-protected-resource/mcp` and answers an unauthenticated request with a `401`
+carrying `WWW-Authenticate: Bearer resource_metadata="…"`. A spec-compliant MCP client follows that
+pointer to find your tenant's authorization server on its own, rather than needing it configured by
+hand. Left empty, discovery is simply off — the server cannot know its own public URL from behind a
+proxy, and publishing a guess would send clients somewhere wrong.
+
+It also **registers your hostname with the transport's DNS-rebinding protection**. The MCP SDK
+validates the `Host` header and, by default, trusts only localhost. Since this process binds
+`0.0.0.0`, a deployment behind an ingress receives requests with a real hostname — and without this
+setting every one of them is refused with `421 Misdirected Request` before reaching any handler.
+Localhost stays valid regardless, so local runs and MCP Inspector are unaffected.
+
+```bash
+GRAPH_MCP_RESOURCE_URL=https://graph-mcp.example.com/mcp
+```
+
+Use `GRAPH_MCP_ALLOWED_HOSTS` (comma-separated) only for *additional* names that URL does not
+cover — a split-horizon DNS name, a service-mesh address, a second domain.
+
+> **Getting `421 Misdirected Request` on every request?** That is this, and it is the most likely
+> thing to go wrong on a first hosted deployment. Set `GRAPH_MCP_RESOURCE_URL` to the URL clients
+> actually connect to.
+
+**Dynamic client registration is not available.** Entra ID does not implement RFC 7591, so a client
+cannot register itself from the discovery metadata alone. Clients need a pre-registered app id —
+either yours, or their own with your API added as a permission. This is an Entra limitation, not
+something this server can work around.
 
 ### Behaviour and safety
 

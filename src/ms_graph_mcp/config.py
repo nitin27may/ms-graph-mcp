@@ -44,6 +44,28 @@ class GraphMcpConfig(BaseSettings):
         default=False,
         validation_alias=AliasChoices("GRAPH_MCP_DISABLE_SSL_VERIFY"),
     )
+    # The server's own public URL, e.g. https://graph-mcp.example.com/mcp.
+    # Required for OAuth discovery: RFC 9728 protected-resource metadata has to
+    # state the canonical resource identifier, and the server cannot infer it
+    # from behind a proxy. Empty disables discovery — the transport still
+    # authenticates exactly as before.
+    resource_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_RESOURCE_URL"),
+    )
+
+    # Extra Host header values the HTTP transport accepts, comma-separated.
+    # The SDK enables DNS-rebinding protection and, absent an explicit host,
+    # trusts only localhost — which is wrong the moment the server sits behind
+    # an ingress, since every request then arrives with a real hostname and is
+    # refused with 421. The public host is usually already known from
+    # `resource_url`, so this setting is only needed for additional names
+    # (a split-horizon DNS name, an internal service address, a second domain).
+    allowed_hosts: str = Field(
+        default="",
+        validation_alias=AliasChoices("GRAPH_MCP_ALLOWED_HOSTS"),
+    )
+
     # Named toolset profiles this deployment exposes, comma-separated. This is
     # the ceiling: an X-Toolsets header may narrow it, never widen it. Defaults
     # to "core" rather than "all" so a client is not handed 85 tool definitions
@@ -160,6 +182,49 @@ class GraphMcpConfig(BaseSettings):
     @property
     def obo_scopes_list(self) -> list[str]:
         return [s.strip() for s in self.obo_scopes.split(",") if s.strip()]
+
+    @property
+    def authorization_server(self) -> str:
+        """The Entra issuer clients should authenticate against."""
+        tenant = self.tenant_id or "common"
+        return f"https://login.microsoftonline.com/{tenant}/v2.0"
+
+    @property
+    def resource_metadata_url(self) -> str:
+        """Where the RFC 9728 document lives, or empty when discovery is off."""
+        if not self.resource_url:
+            return ""
+        from mcp.server.auth.routes import build_resource_metadata_url
+        from pydantic import AnyHttpUrl
+
+        return str(build_resource_metadata_url(AnyHttpUrl(self.resource_url)))
+
+    @property
+    def allowed_hosts_list(self) -> list[str]:
+        """Host header values the transport accepts.
+
+        Localhost always stays valid so a developer run and the MCP Inspector
+        keep working. The public host from ``resource_url`` is added
+        automatically — an operator who has already declared the canonical
+        resource identifier should not have to repeat it to avoid a 421.
+
+        Ports are wildcarded (`host:*`) because the port a client connects on
+        is a deployment detail; the protection that matters is on the *name*,
+        which is what a DNS-rebinding attack has to control.
+        """
+        hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*", "127.0.0.1", "localhost"]
+
+        for extra in filter(None, (h.strip() for h in self.allowed_hosts.split(","))):
+            hosts += [extra, f"{extra}:*"]
+
+        if self.resource_url:
+            from urllib.parse import urlsplit
+
+            hostname = urlsplit(self.resource_url).hostname
+            if hostname:
+                hosts += [hostname, f"{hostname}:*"]
+
+        return list(dict.fromkeys(hosts))
 
     def to_auth_config(self) -> AuthConfig:
         """Build the entra AuthConfig for the Graph downstream surface.
