@@ -140,6 +140,12 @@ change between minor versions; breaking changes are called out explicitly.
   reaching PyPI *before* the first stable release, where being the only version on the index would
   make a plain `pip install` resolve to it.
 
+- CI runs an **MCP Inspector** smoke check — `tools/list` and a `tools/call` through the reference
+  client, asserting every tool carries annotations, that no write tool is advertised without write
+  scope, and that a call without credentials fails closed. Inspector is not built on the SDK this
+  server uses, so it sees what a real client would; the pytest suite drives the server with the same
+  library it is implemented with and cannot catch an SDK-level bug.
+
 ### Fixed
 
 - **The HTTP transport rejected its own public hostname.** The MCP SDK keys DNS-rebinding

@@ -123,6 +123,82 @@ jobs:
           retention-days: 7
 
 
+  inspector:
+    name: MCP Inspector smoke check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: uv sync --locked
+
+      # Inspector is the reference MCP client, and the point of running it is
+      # that it is *not* built on the SDK this server uses. The pytest suite —
+      # including the in-process conformance tests — drives the server with the
+      # same library it is implemented with, so an SDK-level bug is invisible to
+      # it. A third-party client sees what a real user's client would.
+      #
+      # Variables are passed with -e: Inspector does not hand the server it
+      # spawns the parent environment, so exporting them would silently start
+      # the server with none of them.
+      - name: tools/list through a real client
+        run: |
+          npx -y @modelcontextprotocol/inspector --cli \
+            uv run ms-graph-mcp \
+            -e GRAPH_MCP_ACCESS_TOKEN=not-a-real-token \
+            -e GRAPH_MCP_TOOLSETS=all \
+            --method tools/list > /tmp/tools.json
+
+          python - <<'PYEOF'
+          import json, pathlib, sys
+
+          tools = json.loads(pathlib.Path("/tmp/tools.json").read_text())["tools"]
+          print(f"{len(tools)} tools advertised")
+
+          missing = [t["name"] for t in tools if not t.get("annotations")]
+          if missing:
+              sys.exit(f"::error::tools advertised without annotations: {missing[:5]}")
+
+          # A write tool reaching an unprivileged client's tools/list is the
+          # tier boundary failing in the one place a user would actually see it.
+          leaked = [t["name"] for t in tools if t["name"] == "mail_send"]
+          if leaked:
+              sys.exit(f"::error::write tools advertised without write scope: {leaked}")
+
+          if len(tools) < 40:
+              sys.exit(f"::error::only {len(tools)} tools advertised; expected the full read tier")
+          PYEOF
+
+      # The token is never used — tools/list makes no Graph call — but its
+      # presence stops the server attempting an interactive sign-in it cannot
+      # complete on a runner.
+      - name: a tool call fails closed without credentials
+        run: |
+          npx -y @modelcontextprotocol/inspector --cli \
+            uv run ms-graph-mcp \
+            --method tools/call --tool-name people_get_my_profile > /tmp/call.json
+          python - <<'PYEOF'
+          import json, pathlib, sys
+
+          result = json.loads(pathlib.Path("/tmp/call.json").read_text())
+          if not result.get("isError"):
+              sys.exit("::error::a tool call without a token did not report an error")
+
+          payload = json.loads(result["content"][0]["text"])
+          if payload.get("error") != "missing_graph_token":
+              sys.exit(f"::error::unexpected error shape: {payload}")
+          print("fails closed:", payload["error"])
+          PYEOF
+
   changelog:
     name: changelog entry
     # Pull requests only: a direct push to main has no PR to annotate, and a
