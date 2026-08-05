@@ -139,7 +139,9 @@ jobs:
         with:
           node-version: "22"
 
-      - run: uv sync --locked
+      # NB: no --locked. setup-uv exports UV_FROZEN=1, which means the same
+      # thing and errors if --locked is also passed.
+      - run: uv sync
 
       # Inspector is the reference MCP client, and the point of running it is
       # that it is *not* built on the SDK this server uses. The pytest suite —

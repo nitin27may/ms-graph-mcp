@@ -61,7 +61,9 @@ jobs:
       # promised for removal in the version you are about to cut.
       - name: Verify the bumped tree
         run: |
-          uv sync --locked
+          # No --locked: setup-uv exports UV_FROZEN=1, which means the same
+          # thing and errors if both are given.
+          uv sync
           uv run pytest -q
           uv run ruff check --no-fix .
           uv run ruff format --check .
