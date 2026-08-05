@@ -41,10 +41,15 @@ beyond localhost:
 
 | Setting | Default | For a network-reachable deployment |
 |---|---|---|
-| `GRAPH_MCP_JWT_VERIFY` | `false` | **Set to `true`.** Off by default only so a local run works without JWKS connectivity. Leaving it off means token signatures are not verified. |
+| `GRAPH_MCP_JWT_VERIFY` | `true` | Leave it on. Turning it off stops token signatures being verified; it exists for local runs without JWKS connectivity. |
 | `GRAPH_MCP_DISABLE_SSL_VERIFY` | `false` | Leave `false`. It exists for corporate TLS-inspection proxies and disables certificate validation on Graph calls. |
 | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) | Set to a high-entropy value, or do not expose the HTTP transport. This secret unlocks the machine principal. |
 | `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` | `""` (no gate) | Set to your tenant's domains if write tools are enabled, so an agent cannot mail arbitrary external recipients. |
+| `GRAPH_MCP_READ_ONLY` | `false` | Set to `true` for any deployment that should never mutate tenant data. Removes the write tier entirely — stronger than relying on callers to omit the write scope. |
+
+**There is deliberately no way to skip authentication.** Token validation always runs in-server, so
+a deployment that loses its gateway does not become an unauthenticated Graph proxy. See
+[ADR 0003](docs/adr/0003-no-gateway-trust-mode.md); do not file this as a redundancy.
 
 Additional expectations:
 

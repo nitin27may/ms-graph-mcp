@@ -47,7 +47,7 @@ class AuthConfig(BaseSettings):
     # see the service-to-service-identity ADR). When set, a request whose bearer
     # equals it is treated as a trusted fleet machine call: token verification
     # and the role gate are bypassed. Empty = no machine bypass (user JWT only).
-    # This is the ONLY place the secret is checked across the fleet.
+    # This is the ONLY place the shared secret is checked.
     shared_secret: str = Field(
         default="",
         validation_alias=AliasChoices("WG_AUTH_SHARED_SECRET", "AGENT_SHARED_SECRET"),
@@ -73,7 +73,8 @@ class AuthConfig(BaseSettings):
     )
     # Comma-separated allowlist of authorized parties (azp/appid). Empty = no
     # azp enforcement; downstream MCP services set this to the app client_id so
-    # only our fleet's OBO tokens (generic Graph/ADO audience) are accepted.
+    # only tokens minted by the configured app registration are accepted; a
+    # Graph audience alone is generic across every app in the tenant.
     allowed_azp: str = Field(default="", validation_alias=AliasChoices("WG_AUTH_ALLOWED_AZP"))
     # Comma-separated required App Roles. Empty = authenticate-only (no authz
     # gate). When set, the caller's `roles` claim must contain at least one.

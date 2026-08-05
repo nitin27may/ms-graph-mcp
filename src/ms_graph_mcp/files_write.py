@@ -30,10 +30,10 @@ import httpx
 from opentelemetry import trace
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get, graph_post
+from ms_graph_mcp.client import graph_get, graph_post, graph_put_raw
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.odata import validate_graph_id
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import WRITE_CREATE, WRITE_UPDATE, tool
 
 logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer("ms_graph_mcp")
@@ -95,13 +95,14 @@ def _drive_base(drive_id: str | None) -> str:
     return f"/drives/{drive_id}" if drive_id else "/me/drive"
 
 
-def _build_simple_upload_url(
+def _build_simple_upload_path(
     folder_path: str,
     filename: str,
     *,
     conflict_behavior: str = "rename",
     drive_id: str | None = None,
 ) -> str:
+    """Graph-relative path for a simple (<=4 MiB) content PUT."""
     folder_norm = _normalise_folder_path(folder_path)
     file_norm = urllib.parse.quote(filename, safe="")
     base = _drive_base(drive_id)
@@ -114,7 +115,7 @@ def _build_simple_upload_url(
         suffix = (
             f"?@microsoft.graph.conflictBehavior={urllib.parse.quote(conflict_behavior, safe='')}"
         )
-    return f"{_GRAPH_BASE}{endpoint}{suffix}"
+    return f"{endpoint}{suffix}"
 
 
 def _slim_drive_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -214,34 +215,16 @@ async def upload_file_to_drive(
     safe_name = sanitize_filename(filename)
 
     if len(content) <= _SIMPLE_UPLOAD_LIMIT:
-        url = _build_simple_upload_url(
+        path = _build_simple_upload_path(
             folder_path, safe_name, conflict_behavior=conflict_behavior, drive_id=drive_id
         )
-        with _tracer.start_as_current_span(
-            "graph.onedrive.upload",
-            attributes={
-                "graph.upload.size": len(content),
-                "graph.upload.path": f"{folder_path}/{safe_name}",
-            },
-        ) as span:
-            async with httpx.AsyncClient(
-                verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
-            ) as client:
-                resp = await client.put(
-                    url,
-                    headers={
-                        "Authorization": f"Bearer {access_token}",
-                        "Content-Type": mime or "application/octet-stream",
-                    },
-                    content=content,
-                )
-                span.set_attribute("http.status_code", resp.status_code)
-                if not resp.is_success:
-                    raise OneDriveError(
-                        f"Simple upload failed: HTTP {resp.status_code} {resp.text[:300]}",
-                        status_code=resp.status_code,
-                    )
-                return _slim_drive_item(resp.json())
+        resp = await graph_put_raw(access_token, path, content, mime or "application/octet-stream")
+        if not resp.ok:
+            raise OneDriveError(
+                f"Simple upload failed: HTTP {resp.status_code} {resp.text[:300]}",
+                status_code=resp.status_code,
+            )
+        return _slim_drive_item(resp.json())
 
     # >4 MiB — upload session.
     base = _drive_base(drive_id)
@@ -266,6 +249,10 @@ async def upload_file_to_drive(
     if not upload_url:
         raise OneDriveError("createUploadSession returned no uploadUrl")
 
+    # Deliberately NOT routed through client.py. The upload session URL is a
+    # pre-signed, short-lived URL on a different host, and Graph requires that
+    # NO Authorization header is sent to it — so it is not a Graph API call and
+    # none of the client helpers apply.
     async with httpx.AsyncClient(
         verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
     ) as client:
@@ -319,35 +306,21 @@ async def update_drive_item_content(
     if not drive_id or not item_id:
         raise OneDriveError("drive_id and item_id are required")
 
-    url = f"{_GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": mime or "application/octet-stream",
-    }
-    if etag:
-        headers["If-Match"] = etag
-
-    with _tracer.start_as_current_span(
-        "graph.onedrive.update",
-        attributes={
-            "graph.upload.size": len(content),
-            "graph.drive.item_id": item_id,
-            "graph.upload.if_match": bool(etag),
-        },
-    ) as span:
-        async with httpx.AsyncClient(
-            verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
-        ) as client:
-            resp = await client.put(url, headers=headers, content=content)
-            span.set_attribute("http.status_code", resp.status_code)
-            if resp.status_code == 412:
-                raise OneDriveConflictError()
-            if not resp.is_success:
-                raise OneDriveError(
-                    f"Item update failed: HTTP {resp.status_code} {resp.text[:300]}",
-                    status_code=resp.status_code,
-                )
-            return _slim_drive_item(resp.json())
+    resp = await graph_put_raw(
+        access_token,
+        f"/drives/{drive_id}/items/{item_id}/content",
+        content,
+        mime or "application/octet-stream",
+        extra_headers={"If-Match": etag} if etag else None,
+    )
+    if resp.status_code == 412:
+        raise OneDriveConflictError()
+    if not resp.ok:
+        raise OneDriveError(
+            f"Item update failed: HTTP {resp.status_code} {resp.text[:300]}",
+            status_code=resp.status_code,
+        )
+    return _slim_drive_item(resp.json())
 
 
 # ── Agent-facing tools ────────────────────────────────────────────────────────
@@ -426,12 +399,16 @@ class CreateSharingLinkInput(BaseModel):
 
 @tool(
     description=(
-        "Create a new text file in the user's OneDrive and return its id, name and web URL. "
-        "Use for saving notes, summaries, markdown or CSV. Text only — binary uploads are not "
-        "supported here."
-    )
+        "Create a new text file in the signed-in user's OneDrive and return its id, name and "
+        "web URL. Takes a folder path relative to the drive root and a filename. Use for saving "
+        "notes, summaries, markdown or CSV. Text only — binary uploads are not supported. Set "
+        "overwrite to replace a file of the same name rather than keeping both. Requires "
+        "Files.ReadWrite."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("upload_file",),
 )
-async def upload_file(params: UploadFileInput, context: dict) -> dict:
+async def files_upload(params: UploadFileInput, context: dict) -> dict:
     token = context["access_token"]
     try:
         return await upload_file_to_drive(
@@ -448,12 +425,15 @@ async def upload_file(params: UploadFileInput, context: dict) -> dict:
 
 @tool(
     description=(
-        "Replace the contents of an existing OneDrive file, keeping the same id, URL and "
-        "sharing permissions. Pass the etag from a previous read to avoid clobbering an edit "
-        "someone else made in the meantime."
-    )
+        "Replace the contents of an existing OneDrive file, keeping its id, URL and sharing "
+        "permissions intact. Takes an item id from files_search or files_list_recent. Pass the "
+        "etag from a previous read to be refused rather than silently overwriting an edit "
+        "someone else made in the meantime. Requires Files.ReadWrite."
+    ),
+    annotations=WRITE_UPDATE,
+    aliases=("update_file_content",),
 )
-async def update_file_content(params: UpdateFileContentInput, context: dict) -> dict:
+async def files_update_content(params: UpdateFileContentInput, context: dict) -> dict:
     token = context["access_token"]
     drive_id = params.drive_id
     if not drive_id:
@@ -487,11 +467,15 @@ async def update_file_content(params: UpdateFileContentInput, context: dict) -> 
 
 @tool(
     description=(
-        "Create a folder in the user's OneDrive, creating any missing parent folders. "
-        "Returns the folder id and web URL. Succeeds quietly if it already exists."
-    )
+        "Create a folder in the signed-in user's OneDrive, creating any missing parent folders "
+        "along the way. Takes a path relative to the drive root such as 'Reports/Q3' and "
+        "returns the folder id and web URL. Succeeds quietly if the folder already exists, so "
+        "it is safe to call before an upload. Requires Files.ReadWrite."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("create_folder",),
 )
-async def create_folder(params: CreateFolderInput, context: dict) -> dict:
+async def files_create_folder(params: CreateFolderInput, context: dict) -> dict:
     token = context["access_token"]
     try:
         return await ensure_folder_exists(token, params.folder_path)
@@ -501,11 +485,15 @@ async def create_folder(params: CreateFolderInput, context: dict) -> dict:
 
 @tool(
     description=(
-        "Create a shareable link to a file and return the URL. Defaults to a read-only link "
-        "scoped to the organisation."
-    )
+        "Create a shareable link to a OneDrive or SharePoint file and return the URL. Defaults "
+        "to a read-only link scoped to the organisation; pass edit for write access, or "
+        "anonymous for anyone with the link. Tenant policy commonly blocks anonymous links, in "
+        "which case the tool says so. Requires Files.ReadWrite.All."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("create_sharing_link",),
 )
-async def create_sharing_link(params: CreateSharingLinkInput, context: dict) -> dict:
+async def files_create_sharing_link(params: CreateSharingLinkInput, context: dict) -> dict:
     token = context["access_token"]
     if params.link_type not in {"view", "edit"}:
         return {

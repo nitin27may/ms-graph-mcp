@@ -19,7 +19,7 @@ def test_health_reports_service_metadata():
 
 
 def test_mcp_endpoint_requires_a_token_when_secret_configured():
-    # In-fleet: an unauthenticated request is rejected before the MCP transport
+    # An unauthenticated request is rejected before the MCP transport
     # runs (no Bearer → 401).
     app = build_app(GraphMcpConfig(shared_secret="s3cr3t"))
     with TestClient(app) as client:

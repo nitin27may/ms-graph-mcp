@@ -6,8 +6,8 @@ Run from the backend/ directory:
 
 Key areas tested:
 1. JoinWebUrl OData filter encoding — the core bug fix
-2. get_meetings_with_transcripts — full pipeline with mocked HTTP
-3. get_transcript_by_event_id — all three code paths
+2. meetings_list_with_transcripts — full pipeline with mocked HTTP
+3. meetings_get_transcript_by_event — all three code paths
 4. _parse_vtt — VTT strip helper
 """
 
@@ -43,6 +43,9 @@ def _make_response(status: int, body: dict | str) -> MagicMock:
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status
     resp.is_success = 200 <= status < 300
+    # A real httpx.Response always carries headers; graph_try_get reads
+    # content-type off them to decide how to hand the body back.
+    resp.headers = {"content-type": "application/json"}
     if isinstance(body, dict):
         resp.json.return_value = body
         resp.text = json.dumps(body)
@@ -133,7 +136,7 @@ class TestJoinUrlEncoding:
         )
 
 
-# ── 2. get_meetings_with_transcripts ─────────────────────────────────────────
+# ── 2. meetings_list_with_transcripts ─────────────────────────────────────────
 
 
 def _calendar_event(
@@ -166,7 +169,7 @@ class TestGetMeetingsWithTranscripts:
         """When the online meeting has transcripts, has_transcript must be True."""
         from ms_graph_mcp.meetings import (
             GetMeetingsWithTranscriptsInput,
-            get_meetings_with_transcripts,
+            meetings_list_with_transcripts,
         )
 
         calendar_resp = _make_response(200, {"value": [_calendar_event("evt-1", "Weekly Sync")]})
@@ -194,7 +197,7 @@ class TestGetMeetingsWithTranscripts:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_meetings_with_transcripts(
+            result = await meetings_list_with_transcripts(
                 GetMeetingsWithTranscriptsInput(days_back=7, max_meetings=10),
                 CONTEXT,
             )
@@ -211,7 +214,7 @@ class TestGetMeetingsWithTranscripts:
         """When the transcript endpoint returns empty, has_transcript must be False."""
         from ms_graph_mcp.meetings import (
             GetMeetingsWithTranscriptsInput,
-            get_meetings_with_transcripts,
+            meetings_list_with_transcripts,
         )
 
         calendar_resp = _make_response(
@@ -237,7 +240,7 @@ class TestGetMeetingsWithTranscripts:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_meetings_with_transcripts(
+            result = await meetings_list_with_transcripts(
                 GetMeetingsWithTranscriptsInput(days_back=7, max_meetings=10),
                 CONTEXT,
             )
@@ -254,7 +257,7 @@ class TestGetMeetingsWithTranscripts:
         """
         from ms_graph_mcp.meetings import (
             GetMeetingsWithTranscriptsInput,
-            get_meetings_with_transcripts,
+            meetings_list_with_transcripts,
         )
 
         calendar_resp = _make_response(
@@ -279,7 +282,7 @@ class TestGetMeetingsWithTranscripts:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_meetings_with_transcripts(
+            result = await meetings_list_with_transcripts(
                 GetMeetingsWithTranscriptsInput(days_back=7, max_meetings=10),
                 CONTEXT,
             )
@@ -292,7 +295,7 @@ class TestGetMeetingsWithTranscripts:
         """In-person events without a join URL are excluded from results."""
         from ms_graph_mcp.meetings import (
             GetMeetingsWithTranscriptsInput,
-            get_meetings_with_transcripts,
+            meetings_list_with_transcripts,
         )
 
         in_person = _calendar_event("evt-4", "In-Person Standup", is_online=False)
@@ -318,7 +321,7 @@ class TestGetMeetingsWithTranscripts:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_meetings_with_transcripts(
+            result = await meetings_list_with_transcripts(
                 GetMeetingsWithTranscriptsInput(days_back=7, max_meetings=10),
                 CONTEXT,
             )
@@ -330,7 +333,7 @@ class TestGetMeetingsWithTranscripts:
         """When the calendar API fails, return an empty list (no crash)."""
         from ms_graph_mcp.meetings import (
             GetMeetingsWithTranscriptsInput,
-            get_meetings_with_transcripts,
+            meetings_list_with_transcripts,
         )
 
         async def fake_get(url, **kwargs):
@@ -343,7 +346,7 @@ class TestGetMeetingsWithTranscripts:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_meetings_with_transcripts(
+            result = await meetings_list_with_transcripts(
                 GetMeetingsWithTranscriptsInput(days_back=7, max_meetings=10),
                 CONTEXT,
             )
@@ -351,7 +354,7 @@ class TestGetMeetingsWithTranscripts:
         assert result == []
 
 
-# ── 3. get_transcript_by_event_id ─────────────────────────────────────────────
+# ── 3. meetings_get_transcript_by_event ─────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -363,7 +366,7 @@ class TestGetTranscriptByEventId:
         """
         from ms_graph_mcp.meetings import (
             GetTranscriptByEventIdInput,
-            get_transcript_by_event_id,
+            meetings_get_transcript_by_event,
         )
 
         vtt_content = "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\nAlice: Hello world."
@@ -371,6 +374,8 @@ class TestGetTranscriptByEventId:
         content_resp = MagicMock(spec=httpx.Response)
         content_resp.status_code = 200
         content_resp.text = vtt_content
+        content_resp.is_success = True
+        content_resp.headers = {"content-type": "text/vtt"}
 
         async def fake_get(url, **kwargs):
             url_str = str(url)
@@ -387,7 +392,7 @@ class TestGetTranscriptByEventId:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_transcript_by_event_id(
+            result = await meetings_get_transcript_by_event(
                 GetTranscriptByEventIdInput(online_meeting_id=SAMPLE_ONLINE_MEETING_ID),
                 CONTEXT,
             )
@@ -403,7 +408,7 @@ class TestGetTranscriptByEventId:
 
         from ms_graph_mcp.meetings import (
             GetTranscriptByEventIdInput,
-            get_transcript_by_event_id,
+            meetings_get_transcript_by_event,
         )
 
         event_resp_data = {
@@ -427,6 +432,8 @@ class TestGetTranscriptByEventId:
                     content = MagicMock(spec=httpx.Response)
                     content.status_code = 200
                     content.text = vtt
+                    content.is_success = True
+                    content.headers = {"content-type": "text/vtt"}
                     return content
                 if "transcripts" in url_str:
                     return _make_response(200, transcript_list_data)
@@ -439,7 +446,7 @@ class TestGetTranscriptByEventId:
                 mock_client.__aexit__ = AsyncMock(return_value=False)
                 mock_client_cls.return_value = mock_client
 
-                result = await get_transcript_by_event_id(
+                result = await meetings_get_transcript_by_event(
                     GetTranscriptByEventIdInput(event_id=SAMPLE_EVENT_ID),
                     CONTEXT,
                 )
@@ -454,7 +461,7 @@ class TestGetTranscriptByEventId:
 
         from ms_graph_mcp.meetings import (
             GetTranscriptByEventIdInput,
-            get_transcript_by_event_id,
+            meetings_get_transcript_by_event,
         )
 
         event_data = {
@@ -474,7 +481,7 @@ class TestGetTranscriptByEventId:
                 mock_client.__aexit__ = AsyncMock(return_value=False)
                 mock_client_cls.return_value = mock_client
 
-                result = await get_transcript_by_event_id(
+                result = await meetings_get_transcript_by_event(
                     GetTranscriptByEventIdInput(event_id=SAMPLE_EVENT_ID),
                     CONTEXT,
                 )
@@ -486,10 +493,10 @@ class TestGetTranscriptByEventId:
         """Calling with no IDs returns an immediate error without any HTTP calls."""
         from ms_graph_mcp.meetings import (
             GetTranscriptByEventIdInput,
-            get_transcript_by_event_id,
+            meetings_get_transcript_by_event,
         )
 
-        result = await get_transcript_by_event_id(
+        result = await meetings_get_transcript_by_event(
             GetTranscriptByEventIdInput(),
             CONTEXT,
         )
@@ -500,7 +507,7 @@ class TestGetTranscriptByEventId:
         """A meeting with no transcripts returns a message, not an error."""
         from ms_graph_mcp.meetings import (
             GetTranscriptByEventIdInput,
-            get_transcript_by_event_id,
+            meetings_get_transcript_by_event,
         )
 
         async def fake_get(url, **kwargs):
@@ -513,7 +520,7 @@ class TestGetTranscriptByEventId:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            result = await get_transcript_by_event_id(
+            result = await meetings_get_transcript_by_event(
                 GetTranscriptByEventIdInput(online_meeting_id=SAMPLE_ONLINE_MEETING_ID),
                 CONTEXT,
             )

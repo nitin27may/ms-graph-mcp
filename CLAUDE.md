@@ -2,9 +2,10 @@
 
 Guidance for Claude Code working in this repository.
 
-`ms-graph-mcp` is a Model Context Protocol server for Microsoft Graph — 55 tools across calendar,
-email, meetings, Teams, files, people, directory, tasks and OneNote, served over stdio or
-Streamable HTTP. The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
+`ms-graph-mcp` is a Model Context Protocol server for Microsoft Graph — 60 tools across calendar,
+email, meetings, Teams chat, files, people, directory, tasks and OneNote, served over stdio or
+Streamable HTTP. Tool names are namespaced by Graph permission family (`mail_`, `files_`,
+`calendar_`, `meetings_`, `chat_`, `directory_`, `people_`, `tasks_`, `notes_`). The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
 deliberately **not** dependencies (see the note at the bottom of the `dependencies` block in
 `pyproject.toml`, and [ADR 0002](docs/adr/0002-raw-httpx-graph-client.md)).
 
@@ -94,9 +95,8 @@ Four steps. Skipping step 3 or 4 breaks the server or the suite.
    absent from every allowlist is unreachable; an allowlist name with no registered tool raises
    `RuntimeError` out of `resolve_read_tools()` on the next `tools/list`. The server refuses to
    serve a partial surface rather than silently dropping a tool.
-4. If it is a read tool, bump the hardcoded count in `tests/test_allowlists.py:28`
-   (`len(READ_TOOL_NAMES) == 42`). That assertion exists so adding or removing a tool is a
-   deliberate edit.
+4. Bump the hardcoded count in `tests/test_allowlists.py`. That assertion exists so adding or
+   removing a tool is a deliberate edit rather than an accident.
 
 Any caller-supplied value interpolated into a Graph path or an OData `$filter` must go through
 `src/ms_graph_mcp/odata.py` — `validate_graph_id`, `validate_mail_folder`, `validate_task_status`,
@@ -129,8 +129,8 @@ These are tests, not preferences. A 90-tool surface only stays coherent if drift
 
 | Tier | Count | Exposed when |
 |---|---:|---|
-| Read | 42 | always |
-| Write | 4 | `X-Write-Scope: true` |
+| Read | 43 | always |
+| Write | 8 | `X-Write-Scope: true`, and only when `GRAPH_MCP_READ_ONLY` is off |
 | Internal | 9 | shared-secret machine principal **and** `X-Internal-Scope: true` |
 
 Security invariants — do not relax these to make something work:
@@ -143,8 +143,11 @@ Security invariants — do not relax these to make something work:
   with defense in depth at `entra/middleware.py:118`.
 - Dispatch fails closed. Unknown name, missing scope, and missing Graph token each return a
   structured `{"error": ..., "message": ...}` before any Graph call (`server.py:122-189`).
-- `send_email` / `propose_email` check `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` before the Graph call
-  (`email.py:235`), not after.
+- `mail_send` / `mail_propose` check `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` before the Graph call,
+  not after.
+- **`GRAPH_MCP_READ_ONLY` is enforced at dispatch, not just in `tools/list`.** Hiding a tool is a
+  context-efficiency measure; a caller can name any tool it likes. See ADR 0003 for why there is no
+  setting that skips authentication.
 - Internal tools must never appear in `READ_TOOL_NAMES` / `WRITE_TOOL_NAMES` — that is what keeps
   them off the agent-visible `tools/list`.
 
@@ -186,9 +189,10 @@ Extend those fixtures rather than mocking `verify_token`.
 - **`mcp` 2.0 runs on `httpx2`, a distribution separate from `httpx`.** Both are installed: the SDK
   uses `httpx2`, `client.py` uses `httpx`. Consolidating them is tracked separately — do not mix the
   two in one module.
-- **The package must not import the original monorepo.** `tests/test_tools_contract.py:123` AST-walks
-  every module and fails on imports of `shared`, `agents`, `integrations`, `control_plane`,
-  `wg_tool_core`, `wg_service_auth`.
+- **Every third-party import must be declared in `pyproject.toml`.**
+  `test_package_imports_nothing_undeclared` AST-walks the package and checks each import against
+  the declared dependency list, so an undeclared one fails the build here rather than on a user's
+  machine.
 - **`get_config()` is a cached module singleton** and `build_app()` mutates it. `tests/conftest.py`
   resets it autouse; keep new config-touching tests within that fixture's reach.
 - **`build_app()` is a factory, not a singleton** — the session manager's `run()` may only be entered

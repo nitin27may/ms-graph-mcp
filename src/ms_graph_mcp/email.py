@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import httpx
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get, graph_post_no_content
+from ms_graph_mcp.client import graph_get, graph_patch, graph_post_no_content
 from ms_graph_mcp.config import get_config
+from ms_graph_mcp.errors import graph_error_response, invalid_arguments
 from ms_graph_mcp.odata import escape_odata_string, validate_graph_id, validate_mail_folder
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, WRITE_CREATE, WRITE_SEND, WRITE_UPDATE, tool
 
 _SELECT = "id,subject,from,toRecipients,receivedDateTime,bodyPreview,importance,flag,conversationId,webLink"
 _SELECT_FULL = _SELECT + ",body"
@@ -38,9 +40,17 @@ class GetEmailThreadInput(BaseModel):
 
 
 @tool(
-    description="Search the user's emails by keywords, subject, or sender name. Returns subject, sender, date, and snippet."
+    description=(
+        "Search the signed-in user's mailbox by keyword, subject or sender name. Returns id, "
+        "subject, sender, date and a preview snippet, newest first. Searchable folders are "
+        "inbox, sentitems, drafts, or all. Use mail_list_recent when the ask is time-based "
+        "rather than keyword-based, and mail_get_thread to read a whole conversation. "
+        "Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_emails",),
 )
-async def search_emails(params: SearchEmailsInput, context: dict) -> list[dict]:
+async def mail_search(params: SearchEmailsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     folder = validate_mail_folder(params.folder)
     folder_path = "" if folder == "all" else f"/mailFolders/{folder}"
@@ -57,9 +67,16 @@ async def search_emails(params: SearchEmailsInput, context: dict) -> list[dict]:
 
 
 @tool(
-    description="Get the user's most recent emails. Useful for a quick snapshot of recent activity."
+    description=(
+        "List the signed-in user's most recent emails from the last N days, newest first. "
+        "Returns id, subject, sender, date and a preview snippet. Use for 'what came in today' "
+        "or catching up after time away; mail_search is the tool when specific keywords or a "
+        "sender are known. Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_recent_emails",),
 )
-async def get_recent_emails(params: GetRecentEmailsInput, context: dict) -> list[dict]:
+async def mail_list_recent(params: GetRecentEmailsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     since = (datetime.now(UTC) - timedelta(days=params.days_back)).isoformat()
     data = await graph_get(
@@ -75,8 +92,17 @@ async def get_recent_emails(params: GetRecentEmailsInput, context: dict) -> list
     return [_slim_msg(m) for m in (data.get("value") or [])]
 
 
-@tool(description="Get the user's flagged emails that need follow-up.")
-async def get_flagged_emails(params: GetFlaggedEmailsInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List emails the signed-in user has flagged for follow-up, newest first. Returns id, "
+        "subject, sender, date and preview. Flags are the user's own marker for 'come back to "
+        "this', so use it for 'what do I still need to deal with' rather than mail_list_recent, "
+        "which returns everything regardless of state. Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_flagged_emails",),
+)
+async def mail_list_flagged(params: GetFlaggedEmailsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -92,9 +118,16 @@ async def get_flagged_emails(params: GetFlaggedEmailsInput, context: dict) -> li
 
 
 @tool(
-    description="Get all messages in an email thread (conversation). Returns the full thread history."
+    description=(
+        "Read every message in one email conversation, oldest first, given a conversation id "
+        "from any of the mail listing tools. Returns full message bodies rather than previews, "
+        "so it is the tool for understanding what was actually discussed before replying or "
+        "summarising. Requires Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_email_thread",),
 )
-async def get_email_thread(params: GetEmailThreadInput, context: dict) -> list[dict]:
+async def mail_get_thread(params: GetEmailThreadInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -198,14 +231,15 @@ class ProposeEmailInput(BaseModel):
 
 @tool(
     description=(
-        "Render a confirm-email card so the user can review + send a meeting "
-        "recap by email. Does NOT send — returns a card the frontend displays "
-        "with Confirm/Cancel buttons. Recipients are derived server-side from "
-        "the event's attendee list; the LLM cannot pick them. NEVER claim the "
-        "email was sent — the user must click Confirm first."
-    )
+        "Draft an email about a meeting for the user to review and send themselves — it does "
+        "NOT send anything. Returns a confirmation card. Recipients are derived server-side "
+        "from the calendar event's attendee list and cannot be set by the caller, which is what "
+        "makes this safe to use on untrusted input. Requires Calendars.Read."
+    ),
+    annotations=WRITE_CREATE,
+    aliases=("propose_email",),
 )
-async def propose_email(params: ProposeEmailInput, context: dict) -> dict:
+async def mail_propose(params: ProposeEmailInput, context: dict) -> dict:
     token = context.get("access_token", "")
     caller = (context.get("user_email") or "").strip().lower()
     if not token:
@@ -266,9 +300,16 @@ def _check_send_email_allowed_domains(
 
 
 @tool(
-    description="Send an email via Microsoft Graph. Use this to share meeting summaries, action items, or other content via email."
+    description=(
+        "Send an email as the signed-in user, with an HTML body and optional CC recipients. The "
+        "message is sent immediately with no confirmation step, so confirm recipients and "
+        "content with the user first. A deployment may restrict recipient domains, in which "
+        "case the send is refused before it reaches Graph. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+    aliases=("send_email",),
 )
-async def send_email(params: SendEmailInput, context: dict) -> dict:
+async def mail_send(params: SendEmailInput, context: dict) -> dict:
     token = context["access_token"]
 
     # Tenant-domain allowlist (security-todo low/nits) — opt-in. When
@@ -500,12 +541,15 @@ class ListEmailAttachmentsInput(BaseModel):
 
 @tool(
     description=(
-        "List the file attachments on an email — name, type and size. Returns metadata only, "
-        "not file contents, so it is safe to call on messages with large attachments. "
-        "Inline images such as signature logos are excluded."
-    )
+        "List the file attachments on one email — name, content type and size in bytes. Returns "
+        "metadata only and never file contents, so it is safe to call on messages with very "
+        "large attachments. Inline images such as signature logos are excluded. Requires "
+        "Mail.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("list_email_attachments",),
 )
-async def list_email_attachments(params: ListEmailAttachmentsInput, context: dict) -> list[dict]:
+async def mail_list_attachments(params: ListEmailAttachmentsInput, context: dict) -> list[dict]:
     """Attachment metadata for the agent surface.
 
     Deliberately not the internal ``fetch_message_attachments``, which downloads
@@ -531,3 +575,119 @@ async def list_email_attachments(params: ListEmailAttachmentsInput, context: dic
         for a in (data.get("value") or [])
         if not a.get("isInline")
     ]
+
+
+# ── Message actions ───────────────────────────────────────────────────────────
+# reply / replyAll / forward all answer 202 with an empty body, so they go
+# through graph_post_no_content rather than graph_post.
+
+
+class ReplyEmailInput(BaseModel):
+    message_id: str = Field(description="The message id to reply to")
+    comment_html: str = Field(
+        description="Your reply text as HTML. Quoted thread is added by Graph."
+    )
+
+
+class ForwardEmailInput(BaseModel):
+    message_id: str = Field(description="The message id to forward")
+    to_recipients: list[str] = Field(description="Email addresses to forward to")
+    comment_html: str = Field(
+        default="", description="Optional note added above the forwarded message"
+    )
+
+
+class MarkEmailReadInput(BaseModel):
+    message_id: str = Field(description="The message id to change")
+    is_read: bool = Field(default=True, description="True marks read, False marks unread")
+
+
+@tool(
+    description=(
+        "Reply to an email, sending only to its original sender. Graph quotes the original message "
+        "automatically, so supply just the new text as HTML. Sends immediately — confirm the "
+        "wording with the user first. Replying is usually safer than mail_send because the "
+        "recipient is fixed by the thread and cannot be chosen. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+)
+async def mail_reply(params: ReplyEmailInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    try:
+        await graph_post_no_content(
+            token, f"/me/messages/{message_id}/reply", {"comment": params.comment_html}
+        )
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.Send", tool="mail_reply")
+    return {"status": "sent", "message_id": message_id, "recipients": "original sender"}
+
+
+@tool(
+    description=(
+        "Reply to an email, sending to the sender and everyone else on the thread. Graph quotes "
+        "the original automatically, so supply just the new text as HTML. Use mail_reply when only "
+        "the sender needs the response — reply-all on a large thread is rarely what the user "
+        "actually wants, so confirm first. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+)
+async def mail_reply_all(params: ReplyEmailInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    try:
+        await graph_post_no_content(
+            token, f"/me/messages/{message_id}/replyAll", {"comment": params.comment_html}
+        )
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.Send", tool="mail_reply_all")
+    return {"status": "sent", "message_id": message_id, "recipients": "all thread participants"}
+
+
+@tool(
+    description=(
+        "Forward an email to other people, with an optional note above it. Unlike mail_reply the "
+        "recipients are chosen by the caller, so this can send existing mail to anyone — confirm "
+        "the address list with the user before calling. Subject to the deployment's recipient "
+        "domain allowlist if one is configured. Requires Mail.Send."
+    ),
+    annotations=WRITE_SEND,
+)
+async def mail_forward(params: ForwardEmailInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    if not params.to_recipients:
+        return invalid_arguments("Supply at least one address to forward to.")
+    # Forwarding takes caller-chosen recipients, which makes it the same
+    # exfiltration risk as mail_send — so it goes through the same gate. Reply
+    # and reply-all do not, because the thread fixes who receives them.
+    allow_error = _check_send_email_allowed_domains(params.to_recipients, [])
+    if allow_error is not None:
+        return {"error": "recipient_not_allowed", "message": allow_error, "retryable": False}
+    body = {
+        "comment": params.comment_html,
+        "toRecipients": [{"emailAddress": {"address": a}} for a in params.to_recipients],
+    }
+    try:
+        await graph_post_no_content(token, f"/me/messages/{message_id}/forward", body)
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.Send", tool="mail_forward")
+    return {"status": "sent", "message_id": message_id, "recipients": params.to_recipients}
+
+
+@tool(
+    description=(
+        "Mark an email as read or unread. Use after summarising a message the user has now seen, "
+        "or to flag something back up for attention. Changes only the read state — nothing is "
+        "sent and no other property is touched. Requires Mail.ReadWrite."
+    ),
+    annotations=WRITE_UPDATE,
+)
+async def mail_mark_read(params: MarkEmailReadInput, context: dict) -> dict:
+    token = context["access_token"]
+    message_id = validate_graph_id(params.message_id, "message_id")
+    try:
+        await graph_patch(token, f"/me/messages/{message_id}", {"isRead": params.is_read})
+    except httpx.HTTPStatusError as exc:
+        return graph_error_response(exc, scope="Mail.ReadWrite", tool="mail_mark_read")
+    return {"status": "read" if params.is_read else "unread", "message_id": message_id}

@@ -57,6 +57,16 @@ Four steps. Steps 3 and 4 are not optional — skipping them breaks the server o
 4. **If it is a read tool, bump the count** in `tests/test_allowlists.py`. That assertion exists so
    that changing the tool surface is a deliberate edit rather than an accident.
 
+5. **Name the delegated permission in the description** — `… Requires Mail.Read.` — and regenerate
+   the matrix:
+
+   ```bash
+   uv run python scripts/generate_permissions.py
+   ```
+
+   `docs/permissions.md` is generated from those descriptions, and CI fails if the committed copy
+   is stale.
+
 Anything caller-supplied that ends up in a Graph path or an OData `$filter` must go through the
 helpers in `odata.py` — `validate_graph_id`, `validate_mail_folder`, `validate_task_status`,
 `escape_odata_string`. Do not hand-roll the escaping.
@@ -75,9 +85,9 @@ not a workaround.
   This distinction came out of a security audit.
 - **Dispatch fails closed.** Unknown tool name, missing scope, and missing Graph token each return a
   structured error before any call to Graph is made.
-- **The package must not import its original monorepo.** `test_package_is_self_contained` AST-walks
-  every module and fails on imports of `shared`, `agents`, `integrations`, `control_plane`,
-  `wg_tool_core`, or `wg_service_auth`.
+- **Every third-party import must be declared in `pyproject.toml`.**
+  `test_package_imports_nothing_undeclared` derives the allowed set from the dependency list, so
+  adding a dependency updates the test automatically and forgetting to declare one fails it.
 - **`msgraph-sdk` and `azure-identity` are not dependencies.** See
   [ADR 0002](docs/adr/0002-raw-httpx-graph-client.md) before proposing them.
 

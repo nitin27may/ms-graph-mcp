@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from ms_graph_mcp.client import graph_get_url, graph_post_no_content, graph_probe_status
+from ms_graph_mcp.client import (
+    graph_get_url,
+    graph_post_no_content,
+    graph_probe_status,
+    graph_try_get,
+)
 from ms_graph_mcp.onenote import create_onenote_page
 
 _GET = "https://graph.microsoft.com/v1.0/me/messages?$skiptoken=abc"
@@ -234,3 +239,102 @@ async def test_graph_post_no_content_defaults_body_to_empty_object():
             await graph_post_no_content("tok", "/me/events/e1/accept")
 
     assert client.post.call_args.kwargs["json"] == {}
+
+
+# ── graph_try_get ─────────────────────────────────────────────────────────────
+# graph_get raises on any non-2xx, which is right when a failure is an error and
+# wrong wherever the status itself is a signal. A 403 from the JoinWebUrl filter
+# means "you attended this meeting but did not organise it" and selects a
+# different lookup strategy — meetings.py hand-rolled 14 httpx clients to be able
+# to see that, losing the tracing span and [Graph] logging in the process.
+
+
+async def test_graph_try_get_returns_parsed_json_on_success():
+    resp = _resp(status=200, payload={"value": [{"id": "1"}]})
+    resp.is_success = True
+    resp.text = ""
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+            result = await graph_try_get("tok", "/me/onlineMeetings", **{"$top": 5})
+
+    assert result.ok is True
+    assert result.status_code == 200
+    assert result.json() == {"value": [{"id": "1"}]}
+
+
+async def test_graph_try_get_does_not_raise_on_403():
+    """The whole reason this helper exists."""
+    resp = _resp(status=403)
+    resp.is_success = False
+    resp.text = "forbidden"
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+            result = await graph_try_get("tok", "/me/onlineMeetings")
+
+    assert result.status_code == 403
+    assert result.ok is False
+    resp.raise_for_status.assert_not_called()
+
+
+async def test_graph_try_get_json_is_empty_dict_on_failure():
+    """Callers branch on .ok then read .json() — it must not explode."""
+    resp = _resp(status=404)
+    resp.is_success = False
+    resp.text = ""
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+            result = await graph_try_get("tok", "/me/x")
+
+    assert result.json() == {}
+
+
+async def test_graph_try_get_returns_text_for_non_json_accept():
+    """Transcript content is VTT, not JSON."""
+    resp = _resp(status=200)
+    resp.is_success = True
+    resp.text = "WEBVTT\n\n00:00.000 --> 00:02.000\nHello"
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        client = _mock_client(get=resp)
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await graph_try_get(
+                "tok", "/me/onlineMeetings/m1/transcripts/t1/content", accept="*/*"
+            )
+
+    assert "WEBVTT" in result.text
+    # Accept must reach Graph, or it wraps the VTT in a JSON envelope.
+    assert client.get.call_args.kwargs["headers"]["Accept"] == "*/*"
+    # And no JSON parse should have been attempted on a non-JSON body.
+    resp.json.assert_not_called()
+
+
+async def test_graph_try_get_survives_a_success_with_an_unparseable_body():
+    resp = _resp(status=200)
+    resp.is_success = True
+    resp.text = "not json"
+    resp.json.side_effect = ValueError("no")
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+            result = await graph_try_get("tok", "/me/x")
+
+    assert result.ok is True
+    assert result.json() == {}
+
+
+async def test_graph_try_get_encodes_odata_params_literally():
+    """The $ must survive — the whole OData surface depends on it."""
+    resp = _resp(status=200, payload={})
+    resp.is_success = True
+    resp.text = ""
+    with patch("ms_graph_mcp.client.get_config") as cfg:
+        cfg.return_value.disable_ssl_verify = False
+        client = _mock_client(get=resp)
+        with patch("httpx.AsyncClient", return_value=client):
+            await graph_try_get("tok", "/me/onlineMeetings", **{"$filter": "JoinWebUrl eq 'x'"})
+
+    url = client.get.call_args.args[0]
+    assert "$filter=" in url, "OData $ was percent-encoded"

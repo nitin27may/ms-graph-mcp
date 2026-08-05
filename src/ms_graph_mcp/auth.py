@@ -4,7 +4,8 @@ Auth is delegated to the bundled ``ms_graph_mcp.entra`` toolkit (DOWNSTREAM post
 
 - **Tool calls** carry the user's OBO Graph token in ``Authorization`` — it is
   validated as a real Entra JWT (signature when enabled, audience = Graph, and
-  ``azp == our app`` so only our fleet's OBO tokens are accepted).
+  ``azp`` matching the configured client id, so only tokens minted by this app
+  registration are accepted).
 - **No-user calls** (the agent's startup ``tools/list`` hydration) carry the
   shared secret in ``Authorization`` and take the machine bypass.
 

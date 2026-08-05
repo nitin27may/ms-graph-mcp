@@ -22,6 +22,9 @@ Graph tools as plain async functions rather than over MCP:
 # Import each domain module for its @tool registration side effects + re-export.
 from ms_graph_mcp import (  # noqa: E402  (after config so submodules see get_config)
     calendar,
+    calendar_write,
+    chats,
+    contacts,
     directory,
     email,
     files,
@@ -29,7 +32,9 @@ from ms_graph_mcp import (  # noqa: E402  (after config so submodules see get_co
     meetings,
     onenote,
     people,
+    search,
     tasks,
+    tasks_write,
     teams,
 )
 from ms_graph_mcp.config import GraphMcpConfig, get_config, reset_config, set_config
@@ -42,6 +47,9 @@ __all__ = [
     "reset_config",
     # domain tool modules
     "calendar",
+    "calendar_write",
+    "chats",
+    "contacts",
     "directory",
     "email",
     "files",
@@ -49,6 +57,8 @@ __all__ = [
     "meetings",
     "onenote",
     "people",
+    "search",
     "tasks",
+    "tasks_write",
     "teams",
 ]

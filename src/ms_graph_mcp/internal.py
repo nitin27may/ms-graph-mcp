@@ -1,6 +1,6 @@
 """Internal (deterministic) tool tier for graph-mcp.
 
-These tools are for the host application's **own** ETL / workers / REST routes /
+These tools are for an embedding application's **own** ETL / workers / REST routes /
 action-sinks calling the MCP as plain functions over HTTP — NOT the LLM-agent
 surface and NOT external MCP clients. They are listed/dispatched only when the
 request carries the internal scope (``X-Internal-Scope: true``), which the auth
@@ -32,7 +32,7 @@ from ms_graph_mcp.client import (
 from ms_graph_mcp.client import graph_probe_status as _graph_probe_status
 from ms_graph_mcp.config import get_config
 from ms_graph_mcp.email import fetch_message_attachments as _fetch_message_attachments
-from ms_graph_mcp.files import get_group_drive as _get_group_drive
+from ms_graph_mcp.files import files_get_group_drive as _get_group_drive
 from ms_graph_mcp.files import walk_drive_descendants as _walk_drive_descendants
 from ms_graph_mcp.files_write import ensure_folder_exists as _ensure_folder_exists
 from ms_graph_mcp.files_write import update_drive_item_content as _update_drive_item_content
@@ -55,7 +55,7 @@ class GraphRequestInput(BaseModel):
 @tool(
     description=(
         "INTERNAL passthrough — issue an arbitrary Microsoft Graph request. For the "
-        "Host application's own ETL/REST callers only; not part of the agent tool surface."
+        "Trusted first-party ETL/REST callers only; not part of the agent tool surface."
     )
 )
 async def graph_request(params: GraphRequestInput, context: dict) -> Any:
@@ -86,7 +86,7 @@ async def graph_request(params: GraphRequestInput, context: dict) -> Any:
 
 
 # ── Named internal tools ──────────────────────────────────────────────────────
-# Reusable Graph operations the fleet's ETL/workers call as plain functions over
+# Reusable Graph operations first-party ETL/workers call as plain functions over
 # HTTP. Each wraps the canonical domain helper; the Graph token comes from context
 # (already OBO-exchanged by dispatch for per-user callers).
 

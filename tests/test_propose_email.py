@@ -1,4 +1,4 @@
-"""H1 Step B — propose_email tool contract.
+"""H1 Step B — mail_propose tool contract.
 
 The tool returns a ``confirm_email`` card payload; it MUST NOT call
 sendMail.  Recipients are derived server-side from the event_id —
@@ -16,7 +16,7 @@ import pytest
 from ms_graph_mcp.email import (
     ProposeEmailInput,
     _is_external,
-    propose_email,
+    mail_propose,
 )
 
 
@@ -45,7 +45,7 @@ async def test_returns_confirm_email_card():
             )
         ),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="Recap", body_html="<p>hi</p>"),
             _ctx(),
         )
@@ -69,7 +69,7 @@ async def test_recipients_derived_from_event_attendees():
             )
         ),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(),
         )
@@ -88,7 +88,7 @@ async def test_excludes_caller_from_recipients():
             )
         ),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(user_email="alice@contoso.com"),
         )
@@ -108,7 +108,7 @@ async def test_dedupes_organizer_when_also_an_attendee():
             )
         ),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(),
         )
@@ -130,7 +130,7 @@ async def test_flags_external_recipients():
             )
         ),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(user_email="alice@contoso.com"),
         )
@@ -143,22 +143,22 @@ async def test_flags_external_recipients():
 
 
 async def test_no_send_mail_call():
-    """propose_email never calls /me/sendMail — it only reads /me/events."""
+    """mail_propose never calls /me/sendMail — it only reads /me/events."""
     sendmail_mock = AsyncMock()
     with (
         patch(
             "ms_graph_mcp.email.graph_get",
             AsyncMock(return_value=_event_payload(attendees=["bob@contoso.com"])),
         ),
-        # No httpx send-mail patch needed; if propose_email called
+        # No httpx send-mail patch needed; if mail_propose called
         # /me/sendMail at all the test would import httpx & fail
         # network. The structural guarantee here is the function
         # body's lack of any send call — assertion is the absence of
         # a sendMail invocation via the existing sendmail_mock side
         # channel; mark it explicitly:
-        patch("ms_graph_mcp.email.send_email", sendmail_mock),
+        patch("ms_graph_mcp.email.mail_send", sendmail_mock),
     ):
-        await propose_email(
+        await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(),
         )
@@ -173,7 +173,7 @@ async def test_returns_no_recipients_error_when_event_empty():
         "ms_graph_mcp.email.graph_get",
         AsyncMock(return_value=_event_payload(attendees=[])),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(),
         )
@@ -193,7 +193,7 @@ async def test_returns_no_recipients_error_when_only_caller_attends():
             )
         ),
     ):
-        result = await propose_email(
+        result = await mail_propose(
             ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
             _ctx(user_email="alice@contoso.com"),
         )
@@ -203,7 +203,7 @@ async def test_returns_no_recipients_error_when_only_caller_attends():
 async def test_returns_token_error_when_context_missing_token():
     """Defensive — no Graph token in context means we can't read the
     event; refuse to fabricate recipients."""
-    result = await propose_email(
+    result = await mail_propose(
         ProposeEmailInput(event_id="evt-1", subject="r", body_html=""),
         {"user_email": "alice@contoso.com"},  # no access_token
     )

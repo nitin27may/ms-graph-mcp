@@ -24,15 +24,31 @@ from ms_graph_mcp.tooling import ToolSpec, get_registry
 # Gated behind X-Write-Scope header. Callers must explicitly request write
 # access; the default surface is read-only.
 WRITE_TOOL_NAMES: tuple[str, ...] = (
-    "send_email",
-    "propose_email",
+    "mail_send",
+    "mail_propose",
+    "mail_reply",
+    "mail_reply_all",
+    "mail_forward",
+    "mail_mark_read",
+    "chat_send_message",
     "notes_create_page",
+    "people_create_contact",
     "tasks_create_todo",
+    "tasks_complete_todo",
+    "tasks_update_todo",
+    "tasks_create_planner",
+    "tasks_update_planner",
+    "tasks_complete_planner",
+    # calendar
+    "calendar_create_event",
+    "calendar_update_event",
+    "calendar_cancel_event",
+    "calendar_respond_to_event",
     # files
-    "upload_file",
-    "update_file_content",
-    "create_folder",
-    "create_sharing_link",
+    "files_upload",
+    "files_update_content",
+    "files_create_folder",
+    "files_create_sharing_link",
 )
 
 WRITE_TOOL_NAME_SET: frozenset[str] = frozenset(WRITE_TOOL_NAMES)
@@ -44,28 +60,34 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "calendar_get_event",
     "calendar_get_event_attendees",
     "calendar_list_events_in_range",
+    "calendar_find_meeting_times",
+    "calendar_get_free_busy",
     # email
-    "list_email_attachments",
-    "search_emails",
-    "get_recent_emails",
-    "get_flagged_emails",
-    "get_email_thread",
+    "mail_list_attachments",
+    "mail_search",
+    "mail_list_recent",
+    "mail_list_flagged",
+    "mail_get_thread",
     # meetings
-    "get_meeting_transcript",
-    "get_past_meetings",
-    "get_online_meeting_from_event",
-    "list_meeting_transcripts",
-    "get_meetings_with_transcripts",
-    "get_transcript_by_event_id",
-    "get_attendance_report",
+    "meetings_get_transcript",
+    "meetings_list_past",
+    "meetings_get_from_join_url",
+    "meetings_list_transcripts",
+    "meetings_list_with_transcripts",
+    "meetings_get_transcript_by_event",
+    "meetings_get_attendance_report",
     # files
-    "search_files",
-    "get_trending_files",
-    "get_recent_files",
-    "get_file_content",
-    "get_shared_files",
+    "files_search",
+    "files_list_trending",
+    "files_list_recent",
+    "files_get_content",
+    "files_list_shared_with_me",
+    # search
+    "search_query",
     # people
     "people_search",
+    "people_list_contacts",
+    "people_search_contacts",
     "people_get",
     "people_get_my_profile",
     # directory
@@ -78,13 +100,18 @@ READ_TOOL_NAMES: tuple[str, ...] = (
     "directory_get_group",
     # teams
     "chat_search_messages",
+    "chat_list",
+    "chat_list_messages",
+    "chat_list_members",
     "chat_list_channel_messages",
     "chat_list_teams",
     "chat_list_channels",
-    "get_group_drive",
+    "files_get_group_drive",
     # onenote
     "notes_list_notebooks",
     "notes_list_sections",
+    "notes_list_pages",
+    "notes_get_page_content",
     # tasks
     "tasks_list_planner_plans",
     "tasks_list_planner_buckets",
@@ -96,7 +123,7 @@ READ_TOOL_NAMES: tuple[str, ...] = (
 READ_TOOL_NAME_SET: frozenset[str] = frozenset(READ_TOOL_NAMES)
 
 # ── Internal (deterministic) tool tier ────────────────────────────────────────
-# For the host application's OWN ETL / workers / REST routes / write-sinks calling
+# For an embedding application's OWN ETL / workers / REST routes / write-sinks calling
 # the MCP as plain functions over HTTP. Advertised + callable ONLY when the request
 # carries the internal scope (``X-Internal-Scope: true``), which auth.py honours
 # only for the machine-secret principal. NEVER exposed to LLM agents or external

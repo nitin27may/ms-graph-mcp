@@ -7,9 +7,9 @@ from collections.abc import AsyncIterator
 
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import graph_get
+from ms_graph_mcp.client import graph_get, graph_get_url, graph_try_get
 from ms_graph_mcp.config import get_config
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.tooling import READ_ONLY, tool
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,16 @@ class GetSharedFilesInput(BaseModel):
 
 
 @tool(
-    description="Search OneDrive and SharePoint for files matching keywords. Returns file name, URL, and last modified date."
+    description=(
+        "Search the signed-in user's OneDrive and the SharePoint sites they can reach, by "
+        "filename or content keyword. Returns id, name, drive id, size, last-modified date and "
+        "web URL. OneDrive and SharePoint document libraries are the same underlying resource, "
+        "so one search covers both. Requires Files.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("search_files",),
 )
-async def search_files(params: SearchFilesInput, context: dict) -> list[dict]:
+async def files_search(params: SearchFilesInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -58,8 +65,17 @@ async def search_files(params: SearchFilesInput, context: dict) -> list[dict]:
     return [_slim_file(f) for f in (data.get("value") or []) if f.get("file")]
 
 
-@tool(description="Get files trending around the user based on their recent activity and network.")
-async def get_trending_files(params: GetTrendingFilesInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List documents currently trending around the signed-in user — files their colleagues "
+        "are actively working on, ranked by Microsoft 365 activity signals rather than by the "
+        "user's own history. Use for 'what is the team working on'. files_list_recent is the "
+        "tool for what this user personally touched. Requires Files.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_trending_files",),
+)
+async def files_list_trending(params: GetTrendingFilesInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -81,8 +97,17 @@ async def get_trending_files(params: GetTrendingFilesInput, context: dict) -> li
     ]
 
 
-@tool(description="Get files the user has recently viewed or edited.")
-async def get_recent_files(params: GetRecentFilesInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List files the signed-in user has recently opened or edited, most recent first. "
+        "Returns id, name, drive id and web URL. Use for 'the document I was working on "
+        "yesterday' — files_search is better when the name or a keyword is known, and "
+        "files_list_trending covers what colleagues are working on. Requires Files.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_recent_files",),
+)
+async def files_list_recent(params: GetRecentFilesInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -93,32 +118,35 @@ async def get_recent_files(params: GetRecentFilesInput, context: dict) -> list[d
 
 
 @tool(
-    description="Get the text content of a file from OneDrive or SharePoint. Supports Word, PDF, and plain text files."
+    description=(
+        "Read the text content of a file in OneDrive or SharePoint, given a drive id and item "
+        "id from files_search or files_list_recent. Works for text, Office documents and PDFs; "
+        "binary files return a placeholder instead of bytes. Output is truncated to a caller-"
+        "specified character limit. Requires Files.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_file_content",),
 )
-async def get_file_content(params: GetFileContentInput, context: dict) -> dict:
+async def files_get_content(params: GetFileContentInput, context: dict) -> dict:
     token = context["access_token"]
-    import httpx
 
-    # Try to get text rendition (works for Office files and PDFs)
-    content_url = (
-        f"https://graph.microsoft.com/v1.0/drives/{params.drive_id}/items/{params.item_id}/content"
+    # /content answers 302 with a short-lived download URL on another host, so
+    # the redirect has to be followed. A non-200 is reported to the model rather
+    # than raised — a file it cannot read is an answer, not a crash.
+    resp = await graph_try_get(
+        token,
+        f"/drives/{params.drive_id}/items/{params.item_id}/content",
+        accept="*/*",
+        timeout_seconds=60,
+        follow_redirects=True,
     )
-    async with httpx.AsyncClient(
-        verify=not get_config().disable_ssl_verify, timeout=60, follow_redirects=True
-    ) as client:
-        resp = await client.get(
-            content_url,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        if resp.status_code == 200:
-            content_type = resp.headers.get("content-type", "")
-            if "text" in content_type or "json" in content_type:
-                text = resp.text[: params.max_chars]
-            else:
-                # Binary file — return metadata only
-                text = "[Binary file — text extraction not available]"
+    if resp.ok:
+        if "text" in resp.content_type or "json" in resp.content_type:
+            text = resp.text[: params.max_chars]
         else:
-            text = f"[Could not retrieve content: HTTP {resp.status_code}]"
+            text = "[Binary file — text extraction not available]"
+    else:
+        text = f"[Could not retrieve content: HTTP {resp.status_code}]"
 
     # Get metadata
     meta = await graph_get(
@@ -135,8 +163,17 @@ async def get_file_content(params: GetFileContentInput, context: dict) -> dict:
     }
 
 
-@tool(description="Get files that other people have shared with the user.")
-async def get_shared_files(params: GetSharedFilesInput, context: dict) -> list[dict]:
+@tool(
+    description=(
+        "List files other people have shared directly with the signed-in user, with the owner "
+        "and web URL for each. Covers items shared via OneDrive or SharePoint that do not live "
+        "in the user's own drive, which is why files_list_recent and files_search may not "
+        "surface them. Requires Files.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_shared_files",),
+)
+async def files_list_shared_with_me(params: GetSharedFilesInput, context: dict) -> list[dict]:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -155,11 +192,15 @@ class GetGroupDriveInput(BaseModel):
 
 @tool(
     description=(
-        "Resolve a Microsoft 365 group (Team) to its default document-library "
-        "SharePoint drive. Returns {drive_id, name, web_url, drive_type}."
-    )
+        "Get the document library backing a Microsoft 365 group or Teams team, given a group id "
+        "from directory_search_groups. Returns the drive id and web URL, which is what the "
+        "other file tools need to read or write inside a team's shared files. Requires "
+        "Files.Read.All and Group.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_group_drive",),
 )
-async def get_group_drive(params: GetGroupDriveInput, context: dict) -> dict:
+async def files_get_group_drive(params: GetGroupDriveInput, context: dict) -> dict:
     token = context["access_token"]
     data = await graph_get(
         token,
@@ -208,20 +249,10 @@ async def list_drive_item_children(
     # relative path + params, so for paging we drop back to httpx
     # directly. Most folders fit in one page; this branch is for the
     # rare oversize case.
-    if next_link:
-        import httpx
-
-        from ms_graph_mcp.client import _headers  # type: ignore[attr-defined]
-
-        async with httpx.AsyncClient(
-            verify=not get_config().disable_ssl_verify, timeout=30
-        ) as client:
-            while next_link:
-                resp = await client.get(next_link, headers=_headers(access_token))
-                resp.raise_for_status()
-                payload = resp.json()
-                items.extend(payload.get("value") or [])
-                next_link = payload.get("@odata.nextLink")
+    while next_link:
+        payload = await graph_get_url(access_token, next_link)
+        items.extend(payload.get("value") or [])
+        next_link = payload.get("@odata.nextLink")
     return items
 
 

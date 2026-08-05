@@ -25,8 +25,8 @@ def test_allowlist_has_no_duplicates():
 def test_allowlist_count_is_stable():
     # A regression guard so adding or dropping a tool is a deliberate edit
     # rather than an accident. Bump these when you mean to.
-    assert len(READ_TOOL_NAMES) == 43
-    assert len(WRITE_TOOL_NAMES) == 8
+    assert len(READ_TOOL_NAMES) == 53
+    assert len(WRITE_TOOL_NAMES) == 23
 
 
 def test_resolve_read_tools_returns_registered_specs():
@@ -70,7 +70,7 @@ def test_assert_no_write_in_reads_detects_a_leak(monkeypatch):
     monkeypatch.setattr(
         tools_mod,
         "READ_TOOL_NAME_SET",
-        tools_mod.READ_TOOL_NAME_SET | {"send_email"},
+        tools_mod.READ_TOOL_NAME_SET | {"mail_send"},
     )
     with pytest.raises(RuntimeError, match="write tools"):
         tools_mod.assert_no_write_in_reads()

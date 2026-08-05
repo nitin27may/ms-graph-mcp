@@ -8,9 +8,8 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import BaseModel, Field
 
-from ms_graph_mcp.client import _build_url, graph_get
-from ms_graph_mcp.config import get_config
-from ms_graph_mcp.tooling import tool
+from ms_graph_mcp.client import graph_get, graph_try_get
+from ms_graph_mcp.tooling import READ_ONLY, tool
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +78,6 @@ class GetTranscriptByEventIdInput(BaseModel):
 
 async def _resolve_attendee_transcript(
     token: str,
-    headers: dict,
     event_start: str,
     event_end: str,
 ) -> str | None:
@@ -87,7 +85,6 @@ async def _resolve_attendee_transcript(
     Attendee fallback: call getAllTranscripts and find the meeting ID via time-based match.
     Returns the online meeting ID if found, else None.
     """
-    import httpx
 
     if not event_start:
         return None
@@ -103,21 +100,16 @@ async def _resolve_attendee_transcript(
         ev_start_dt = _parse_dt(event_start)
         ev_end_dt = _parse_dt(event_end) if event_end else ev_start_dt + timedelta(hours=4)
         search_start = (ev_start_dt - timedelta(hours=1)).isoformat()
-        async with httpx.AsyncClient(
-            verify=not get_config().disable_ssl_verify, timeout=30
-        ) as client:
-            resp = await client.get(
-                _build_url(
-                    "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllTranscripts",
-                    **{
-                        "$filter": f"startDateTime ge '{search_start}'",
-                        "$select": "id,createdDateTime,meetingId",
-                        "$top": 50,
-                    },
-                ),
-                headers=headers,
-            )
-        if not resp.is_success:
+        resp = await graph_try_get(
+            token,
+            "/me/onlineMeetings/getAllTranscripts",
+            **{
+                "$filter": f"startDateTime ge '{search_start}'",
+                "$select": "id,createdDateTime,meetingId",
+                "$top": 50,
+            },
+        )
+        if not resp.ok:
             logger.warning(
                 "_resolve_attendee_transcript: getAllTranscripts HTTP %s", resp.status_code
             )
@@ -142,13 +134,19 @@ async def _resolve_attendee_transcript(
 
 
 @tool(
-    description="Get the transcript of an online meeting. Accepts either an online meeting ID or a Teams join URL (https://teams.microsoft.com/l/meetup-join/...). Returns time-stamped speaker turns with spoken text."
+    description=(
+        "Get the spoken transcript of a Teams meeting as time-stamped speaker turns. Accepts a "
+        "Teams join URL, a calendar event id, or an online meeting id and resolves whichever it "
+        "is. Works whether the user organised the meeting or merely attended it. Use "
+        "meetings_get_transcript_by_event when a calendar event id is all that is available. "
+        "Requires OnlineMeetingTranscript.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_meeting_transcript",),
 )
-async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dict) -> dict:
-    import httpx
+async def meetings_get_transcript(params: GetMeetingTranscriptInput, context: dict) -> dict:
 
     token = context["access_token"]
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     # Resolve the meeting_id to an actual online meeting ID.
     # Three input forms are accepted:
@@ -159,16 +157,12 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
     if params.meeting_id.startswith("https://"):
         join_url = params.meeting_id
         odata_safe_url = join_url.replace("'", "''")
-        async with httpx.AsyncClient(
-            verify=not get_config().disable_ssl_verify, timeout=20
-        ) as client:
-            resp = await client.get(
-                _build_url(
-                    "https://graph.microsoft.com/v1.0/me/onlineMeetings",
-                    **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'", "$select": "id"},
-                ),
-                headers=headers,
-            )
+        resp = await graph_try_get(
+            token,
+            "/me/onlineMeetings",
+            timeout_seconds=20,
+            **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'", "$select": "id"},
+        )
         if resp.status_code == 403:
             # Attendee meeting — JoinWebUrl filter is organizer-only.
             # Fall back to getAllTranscripts + time-based match.
@@ -177,7 +171,7 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
                 join_url[:60],
             )
             actual_id = await _resolve_attendee_transcript(
-                token, headers, params.event_start, params.event_end
+                token, params.event_start, params.event_end
             )
             if not actual_id:
                 return {
@@ -186,7 +180,7 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
                     "error": "attendee_access_only",
                     "message": "Transcript requires meeting organizer role. No time-matched transcript found via getAllTranscripts.",
                 }
-        elif resp.is_success:
+        elif resp.ok:
             matches = resp.json().get("value") or []
             if not matches:
                 logger.warning(
@@ -215,23 +209,19 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
             join_url = (event.get("onlineMeeting") or {}).get("joinUrl")
             if join_url:
                 odata_safe_url = join_url.replace("'", "''")
-                async with httpx.AsyncClient(
-                    verify=not get_config().disable_ssl_verify, timeout=20
-                ) as client:
-                    resp = await client.get(
-                        _build_url(
-                            "https://graph.microsoft.com/v1.0/me/onlineMeetings",
-                            **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'", "$select": "id"},
-                        ),
-                        headers=headers,
-                    )
+                resp = await graph_try_get(
+                    token,
+                    "/me/onlineMeetings",
+                    timeout_seconds=20,
+                    **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'", "$select": "id"},
+                )
                 if resp.status_code == 403:
                     actual_id = await _resolve_attendee_transcript(
-                        token, headers, params.event_start, params.event_end
+                        token, params.event_start, params.event_end
                     )
                     if not actual_id:
                         return {"transcript": "", "segments": [], "error": "attendee_access_only"}
-                elif resp.is_success:
+                elif resp.ok:
                     matches = resp.json().get("value") or []
                     if matches:
                         actual_id = matches[0]["id"]
@@ -254,19 +244,15 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
     # Take the most recent transcript
     transcript_id = items[-1]["id"]
 
-    # Fetch transcript content as VTT text
-    import httpx
-
-    url = f"https://graph.microsoft.com/v1.0/me/onlineMeetings/{actual_id}/transcripts/{transcript_id}/content?$format=text/vtt"
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.get(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        if resp.status_code == 200:
-            vtt_text = resp.text
-        else:
-            vtt_text = ""
+    # Transcript content is VTT, not JSON, and an empty body on failure is an
+    # expected outcome rather than an error.
+    resp = await graph_try_get(
+        token,
+        f"/me/onlineMeetings/{actual_id}/transcripts/{transcript_id}/content",
+        accept="*/*",
+        **{"$format": "text/vtt"},
+    )
+    vtt_text = resp.text if resp.ok else ""
 
     parsed = _parse_vtt(vtt_text)
     _MAX_TRANSCRIPT = 100000
@@ -280,34 +266,37 @@ async def get_meeting_transcript(params: GetMeetingTranscriptInput, context: dic
 
 
 @tool(
-    description="Get past meetings from the last N days. Optionally filter to online meetings only. Useful for finding meetings to summarize."
+    description=(
+        "List the signed-in user's meetings from the last N days, most recent first, optionally "
+        "restricted to online ones. Returns id, subject, times, organiser and join URL. The "
+        "starting point for 'what did I attend' and for finding a meeting to summarise — "
+        "meetings_list_with_transcripts is better when only recorded meetings matter. "
+        "Requires Calendars.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_past_meetings",),
 )
-async def get_past_meetings(params: GetPastMeetingsInput, context: dict) -> list[dict]:
+async def meetings_list_past(params: GetPastMeetingsInput, context: dict) -> list[dict]:
     token = context["access_token"]
     now = datetime.now(UTC)
     start = now - timedelta(days=params.days_back)
     # Extend end to midnight tonight so today's remaining meetings are included
     end_of_today = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    import httpx
-
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.get(
-            _build_url(
-                "https://graph.microsoft.com/v1.0/me/calendarView",
-                startDateTime=start.isoformat(),
-                endDateTime=end_of_today.isoformat(),
-                **{
-                    "$select": _SELECT_EVENT,
-                    "$top": min(params.max_results, 50),
-                    "$orderby": "start/dateTime desc",
-                },
-            ),
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-        )
-        if not resp.is_success:
-            return []
-        data = resp.json()
+    resp = await graph_try_get(
+        token,
+        "/me/calendarView",
+        startDateTime=start.isoformat(),
+        endDateTime=end_of_today.isoformat(),
+        **{
+            "$select": _SELECT_EVENT,
+            "$top": min(params.max_results, 50),
+            "$orderby": "start/dateTime desc",
+        },
+    )
+    if not resp.ok:
+        return []
+    data = resp.json()
 
     events = data.get("value") or []
     results = []
@@ -345,33 +334,29 @@ async def get_past_meetings(params: GetPastMeetingsInput, context: dict) -> list
 
 @tool(
     description=(
-        "Look up an online meeting object from its Teams join URL. "
-        "Returns the online meeting ID needed to fetch transcripts or attendance reports. "
-        "Use this after get_past_meetings to resolve calendar event → online meeting ID."
-    )
+        "Resolve a Teams join URL to its online meeting record, returning the online meeting id, "
+        "subject and start time. A plumbing step: the online meeting id is what the transcript "
+        "and attendance tools need, and a calendar event only carries the join URL. Fails for "
+        "meetings the user attended but did not organise, because the underlying Graph filter is "
+        "organiser-only. Requires OnlineMeetings.Read."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_online_meeting_from_event",),
 )
-async def get_online_meeting_from_event(
-    params: GetOnlineMeetingFromEventInput, context: dict
-) -> dict:
+async def meetings_get_from_join_url(params: GetOnlineMeetingFromEventInput, context: dict) -> dict:
     token = context["access_token"]
-    import httpx
 
     # Use params= so httpx percent-encodes the filter value properly.
     # Teams join URLs contain %3a, %40 etc. which must be double-encoded (%253a)
     # so the Graph API's single URL-decode step restores them before string comparison.
     # This matches the TypeScript SDK's encodeURIComponent() behaviour.
     odata_safe_url = params.join_url.replace("'", "''")
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.get(
-            _build_url(
-                "https://graph.microsoft.com/v1.0/me/onlineMeetings",
-                **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'"},
-            ),
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-        )
-        if not resp.is_success:
-            return {"error": f"Could not look up meeting: HTTP {resp.status_code}"}
-        data = resp.json()
+    resp = await graph_try_get(
+        token, "/me/onlineMeetings", **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'"}
+    )
+    if not resp.ok:
+        return {"error": f"Could not look up meeting: HTTP {resp.status_code}"}
+    data = resp.json()
 
     items = data.get("value") or []
     if not items:
@@ -389,11 +374,15 @@ async def get_online_meeting_from_event(
 
 @tool(
     description=(
-        "List transcript metadata for an online meeting — returns transcript IDs and creation dates. "
-        "Use this to check whether a meeting has transcripts before fetching the full content."
-    )
+        "List the transcripts available for one online meeting, given an online meeting id from "
+        "meetings_get_from_join_url. Returns transcript ids and creation times without fetching "
+        "any content, so it is cheap to call. A meeting can hold more than one transcript when "
+        "recording was stopped and restarted. Requires OnlineMeetingTranscript.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("list_meeting_transcripts",),
 )
-async def list_meeting_transcripts(
+async def meetings_list_transcripts(
     params: ListMeetingTranscriptsInput, context: dict
 ) -> list[dict]:
     token = context["access_token"]
@@ -415,14 +404,16 @@ async def list_meeting_transcripts(
 
 @tool(
     description=(
-        "Get past meetings with accurate has_transcript flags. "
-        "Returns ALL meetings (online and in-person) from the last N days. "
-        "Uses getAllTranscripts API which works for both meeting organizers AND attendees. "
-        "Use this — not get_past_meetings — whenever you will render a meeting_list card, "
-        "so the Transcripts filter works correctly in the UI."
-    )
+        "List recent meetings and flag which ones actually have a transcript, checking each "
+        "concurrently. Returns subject, time, organiser, the online meeting id and a "
+        "has_transcript boolean. Use this to find something worth summarising without fetching "
+        "transcripts one at a time to discover most meetings were never recorded. "
+        "Requires Calendars.Read and OnlineMeetingTranscript.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_meetings_with_transcripts",),
 )
-async def get_meetings_with_transcripts(
+async def meetings_list_with_transcripts(
     params: GetMeetingsWithTranscriptsInput, context: dict
 ) -> list[dict]:
     """
@@ -432,29 +423,24 @@ async def get_meetings_with_transcripts(
         (createdDateTime within [event.start, event.end + 3h])
     getAllTranscripts is pre-fetched once for the whole period before the per-event batch.
     """
-    import httpx
 
     token = context["access_token"]
     now = datetime.now(UTC)
     start = now - timedelta(days=params.days_back)
-    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
     # ── Step 1: Fetch calendar events (getUserMeetings equivalent) ────────────
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        resp = await client.get(
-            _build_url(
-                "https://graph.microsoft.com/v1.0/me/calendarView",
-                startDateTime=start.isoformat(),
-                endDateTime=now.isoformat(),
-                **{
-                    "$select": _SELECT_EVENT,
-                    "$top": min(params.max_meetings, 100),
-                    "$orderby": "start/dateTime desc",
-                },
-            ),
-            headers=headers,
-        )
-    events = resp.json().get("value") or [] if resp.is_success else []
+    resp = await graph_try_get(
+        token,
+        "/me/calendarView",
+        startDateTime=start.isoformat(),
+        endDateTime=now.isoformat(),
+        **{
+            "$select": _SELECT_EVENT,
+            "$top": min(params.max_meetings, 100),
+            "$orderby": "start/dateTime desc",
+        },
+    )
+    events = resp.json().get("value") or [] if resp.ok else []
 
     # Filter online meetings only (same as web: events.filter(e => e.isOnlineMeeting))
     online_events = [
@@ -474,17 +460,10 @@ async def get_meetings_with_transcripts(
     all_transcripts: list[dict] = []
     try:
         # Try without $filter first (some tenants reject it); just fetch recent transcripts.
-        async with httpx.AsyncClient(
-            verify=not get_config().disable_ssl_verify, timeout=30
-        ) as client:
-            tr_all_resp = await client.get(
-                _build_url(
-                    "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllTranscripts",
-                    **{"$top": 100},
-                ),
-                headers=headers,
-            )
-        if tr_all_resp.is_success:
+        tr_all_resp = await graph_try_get(
+            token, "/me/onlineMeetings/getAllTranscripts", **{"$top": 100}
+        )
+        if tr_all_resp.ok:
             all_transcripts = tr_all_resp.json().get("value") or []
             logger.info(
                 "[get_meetings_with_transcripts] getAllTranscripts returned %d items",
@@ -568,16 +547,12 @@ async def get_meetings_with_transcripts(
             return None, False
         try:
             odata_safe_url = join_url.replace("'", "''")
-            async with httpx.AsyncClient(
-                verify=not get_config().disable_ssl_verify, timeout=20
-            ) as client:
-                om_resp = await client.get(
-                    _build_url(
-                        "https://graph.microsoft.com/v1.0/me/onlineMeetings",
-                        **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'"},
-                    ),
-                    headers=headers,
-                )
+            om_resp = await graph_try_get(
+                token,
+                "/me/onlineMeetings",
+                timeout_seconds=20,
+                **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'"},
+            )
 
             if om_resp.status_code == 403:
                 # Attendee meeting — JoinWebUrl filter is organizer-only
@@ -589,7 +564,7 @@ async def get_meetings_with_transcripts(
                 ev_end = (event.get("end") or {}).get("dateTime", "")
                 return _find_transcript_by_time(ev_start, ev_end)
 
-            if not om_resp.is_success:
+            if not om_resp.ok:
                 try:
                     err = om_resp.json().get("error", {})
                     logger.warning(
@@ -612,14 +587,13 @@ async def get_meetings_with_transcripts(
                 return None, False
 
             om_id = items[0]["id"]
-            async with httpx.AsyncClient(
-                verify=not get_config().disable_ssl_verify, timeout=20
-            ) as client:
-                tr_resp = await client.get(
-                    f"https://graph.microsoft.com/v1.0/me/onlineMeetings/{om_id}/transcripts?$select=id",
-                    headers=headers,
-                )
-            has_transcript = tr_resp.is_success and bool(tr_resp.json().get("value"))
+            tr_resp = await graph_try_get(
+                token,
+                f"/me/onlineMeetings/{om_id}/transcripts",
+                timeout_seconds=20,
+                **{"$select": "id"},
+            )
+            has_transcript = tr_resp.ok and bool(tr_resp.json().get("value"))
             return om_id, has_transcript
 
         except Exception as exc:
@@ -672,15 +646,18 @@ async def get_meetings_with_transcripts(
 
 @tool(
     description=(
-        "Get the full transcript for a meeting. "
-        "Pass online_meeting_id if available (fastest — skips all lookups). "
-        "Pass join_url to skip the event fetch. Pass event_id as a fallback. "
-        "Handles the full pipeline: event → join URL → online meeting ID → transcript content. "
-        "Always prefer passing online_meeting_id when the meeting card already includes it."
-    )
+        "Get a meeting transcript starting from a calendar event id, resolving the event to its "
+        "join URL and then the online meeting. Use when an event id from the calendar tools is "
+        "all that is available. Optionally takes a known join URL or meeting id to skip "
+        "lookup steps. Falls back to a time-based match for meetings the user attended rather "
+        "than organised. Requires OnlineMeetingTranscript.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_transcript_by_event_id",),
 )
-async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, context: dict) -> dict:
-    import httpx
+async def meetings_get_transcript_by_event(
+    params: GetTranscriptByEventIdInput, context: dict
+) -> dict:
 
     token = context["access_token"]
     subject = ""
@@ -708,17 +685,9 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
         # Step 2: Resolve online meeting ID using JoinWebUrl filter (organizer path).
         # On 403 (attendee), fall back to getAllTranscripts + time-based match.
         odata_safe_url = join_url.replace("'", "''")
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-        async with httpx.AsyncClient(
-            verify=not get_config().disable_ssl_verify, timeout=30
-        ) as client:
-            resp = await client.get(
-                _build_url(
-                    "https://graph.microsoft.com/v1.0/me/onlineMeetings",
-                    **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'"},
-                ),
-                headers=headers,
-            )
+        resp = await graph_try_get(
+            token, "/me/onlineMeetings", **{"$filter": f"JoinWebUrl eq '{odata_safe_url}'"}
+        )
 
         if resp.status_code == 403:
             # Attendee meeting — try getAllTranscripts + time-based match to find the online_meeting_id
@@ -745,21 +714,16 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
                         tzinfo=UTC
                     )
                     search_start = (ev_start_dt - timedelta(days=1)).isoformat()
-                    async with httpx.AsyncClient(
-                        verify=not get_config().disable_ssl_verify, timeout=30
-                    ) as client:
-                        all_tr_resp = await client.get(
-                            _build_url(
-                                "https://graph.microsoft.com/v1.0/me/onlineMeetings/getAllTranscripts",
-                                **{
-                                    "$filter": f"startDateTime ge '{search_start}'",
-                                    "$select": "id,createdDateTime,meetingId",
-                                    "$top": 50,
-                                },
-                            ),
-                            headers=headers,
-                        )
-                    if all_tr_resp.is_success:
+                    all_tr_resp = await graph_try_get(
+                        token,
+                        "/me/onlineMeetings/getAllTranscripts",
+                        **{
+                            "$filter": f"startDateTime ge '{search_start}'",
+                            "$select": "id,createdDateTime,meetingId",
+                            "$top": 50,
+                        },
+                    )
+                    if all_tr_resp.ok:
 
                         def _parse_dt2(s: str) -> datetime:
                             s = s.rstrip("Z")
@@ -801,7 +765,7 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
                     "subject": subject,
                 }
 
-        elif not resp.is_success:
+        elif not resp.ok:
             return {
                 "error": f"Could not look up online meeting (HTTP {resp.status_code}).",
                 "subject": subject,
@@ -819,13 +783,9 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
                 subject = items[0].get("subject", "")
 
     # Step 3: List transcripts
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=30) as client:
-        tr_resp = await client.get(
-            f"https://graph.microsoft.com/v1.0/me/onlineMeetings/{online_meeting_id}/transcripts",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-        )
+    tr_resp = await graph_try_get(token, f"/me/onlineMeetings/{online_meeting_id}/transcripts")
 
-    if not tr_resp.is_success:
+    if not tr_resp.ok:
         return {
             "error": f"Could not list transcripts (HTTP {tr_resp.status_code}).",
             "subject": subject,
@@ -843,13 +803,15 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
 
     # Step 4: Fetch latest transcript content as VTT
     latest = transcripts[-1]["id"]
-    async with httpx.AsyncClient(verify=not get_config().disable_ssl_verify, timeout=60) as client:
-        content_resp = await client.get(
-            f"https://graph.microsoft.com/v1.0/me/onlineMeetings/{online_meeting_id}/transcripts/{latest}/content?$format=text/vtt",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    content_resp = await graph_try_get(
+        token,
+        f"/me/onlineMeetings/{online_meeting_id}/transcripts/{latest}/content",
+        accept="*/*",
+        timeout_seconds=60,
+        **{"$format": "text/vtt"},
+    )
 
-    vtt = content_resp.text if content_resp.status_code == 200 else ""
+    vtt = content_resp.text if content_resp.ok else ""
     # Return the raw VTT as the transcript — the frontend's parseTranscript
     # knows how to handle ``WEBVTT … <v Speaker>text</v>`` cues and renders
     # them as a speaker-annotated list. Stripping to plain text (the old
@@ -871,9 +833,17 @@ async def get_transcript_by_event_id(params: GetTranscriptByEventIdInput, contex
 
 
 @tool(
-    description="Get the attendance report for an online meeting — who attended, join/leave times, duration."
+    description=(
+        "Get who actually attended a Teams meeting, with join and leave times and total duration "
+        "per person, given an online meeting id. This reflects real attendance, which is not the "
+        "same as the invite list — calendar_get_event_attendees returns who was invited and how "
+        "they replied. Only available to the meeting organiser. "
+        "Requires OnlineMeetingArtifact.Read.All."
+    ),
+    annotations=READ_ONLY,
+    aliases=("get_attendance_report",),
 )
-async def get_attendance_report(params: GetAttendanceReportInput, context: dict) -> dict:
+async def meetings_get_attendance_report(params: GetAttendanceReportInput, context: dict) -> dict:
     token = context["access_token"]
     data = await graph_get(
         token,

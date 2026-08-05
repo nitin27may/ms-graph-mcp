@@ -24,22 +24,22 @@ from ms_graph_mcp.files_write import (
     OneDriveError,
     UpdateFileContentInput,
     UploadFileInput,
-    create_folder,
-    create_sharing_link,
-    update_file_content,
-    upload_file,
+    files_create_folder,
+    files_create_sharing_link,
+    files_update_content,
+    files_upload,
 )
 
 _CTX = {"access_token": "tok"}
 
 
-# ── upload_file ───────────────────────────────────────────────────────────────
+# ── files_upload ───────────────────────────────────────────────────────────────
 
 
 async def test_upload_file_encodes_text_and_passes_through():
     with patch("ms_graph_mcp.files_write.upload_file_to_drive", new=AsyncMock()) as mock:
         mock.return_value = {"id": "i1", "name": "notes.md", "web_url": "https://x"}
-        result = await upload_file(
+        result = await files_upload(
             UploadFileInput(
                 folder_path="Reports/Q3",
                 filename="notes.md",
@@ -61,7 +61,7 @@ async def test_upload_file_overwrite_flag_maps_to_replace():
     """The model gets a boolean; Graph wants a conflictBehavior string."""
     with patch("ms_graph_mcp.files_write.upload_file_to_drive", new=AsyncMock()) as mock:
         mock.return_value = {}
-        await upload_file(
+        await files_upload(
             UploadFileInput(filename="a.txt", content="x", overwrite=True),
             _CTX,
         )
@@ -72,7 +72,7 @@ async def test_upload_file_sanitises_the_filename():
     """An LLM will happily propose a filename with a slash in it."""
     with patch("ms_graph_mcp.files_write.upload_file_to_drive", new=AsyncMock()) as mock:
         mock.return_value = {}
-        await upload_file(
+        await files_upload(
             UploadFileInput(filename="a/b:c*.txt", content="x"),
             _CTX,
         )
@@ -83,12 +83,12 @@ async def test_upload_file_sanitises_the_filename():
 async def test_upload_file_returns_structured_error_not_an_exception():
     with patch("ms_graph_mcp.files_write.upload_file_to_drive", new=AsyncMock()) as mock:
         mock.side_effect = OneDriveError("quota exceeded", status_code=507)
-        result = await upload_file(UploadFileInput(filename="a.txt", content="x"), _CTX)
+        result = await files_upload(UploadFileInput(filename="a.txt", content="x"), _CTX)
     assert result["error"] == "upload_failed"
     assert "quota exceeded" in result["message"]
 
 
-# ── update_file_content ───────────────────────────────────────────────────────
+# ── files_update_content ───────────────────────────────────────────────────────
 
 
 async def test_update_file_content_resolves_the_users_drive_when_omitted():
@@ -99,7 +99,7 @@ async def test_update_file_content_resolves_the_users_drive_when_omitted():
     ):
         get.return_value = {"id": "drive-abc"}
         upd.return_value = {"id": "i1"}
-        await update_file_content(
+        await files_update_content(
             UpdateFileContentInput(item_id="i1", content="new"),
             _CTX,
         )
@@ -114,7 +114,7 @@ async def test_update_file_content_uses_supplied_drive_without_a_lookup():
         patch("ms_graph_mcp.files_write.update_drive_item_content", new=AsyncMock()) as upd,
     ):
         upd.return_value = {}
-        await update_file_content(
+        await files_update_content(
             UpdateFileContentInput(item_id="i1", content="x", drive_id="d9"),
             _CTX,
         )
@@ -129,7 +129,7 @@ async def test_update_file_content_surfaces_a_conflict_with_recovery_advice():
         patch("ms_graph_mcp.files_write.update_drive_item_content", new=AsyncMock()) as upd,
     ):
         upd.side_effect = OneDriveConflictError()
-        result = await update_file_content(
+        result = await files_update_content(
             UpdateFileContentInput(item_id="i1", content="x", etag='W/"1"'),
             _CTX,
         )
@@ -144,17 +144,17 @@ async def test_update_file_content_passes_etag_as_none_when_blank():
         patch("ms_graph_mcp.files_write.update_drive_item_content", new=AsyncMock()) as upd,
     ):
         upd.return_value = {}
-        await update_file_content(UpdateFileContentInput(item_id="i1", content="x"), _CTX)
+        await files_update_content(UpdateFileContentInput(item_id="i1", content="x"), _CTX)
     assert upd.call_args.kwargs["etag"] is None
 
 
-# ── create_folder ─────────────────────────────────────────────────────────────
+# ── files_create_folder ─────────────────────────────────────────────────────────────
 
 
 async def test_create_folder_delegates_to_ensure_folder_exists():
     with patch("ms_graph_mcp.files_write.ensure_folder_exists", new=AsyncMock()) as mock:
         mock.return_value = {"id": "f1", "name": "Q3"}
-        result = await create_folder(CreateFolderInput(folder_path="Reports/Q3"), _CTX)
+        result = await files_create_folder(CreateFolderInput(folder_path="Reports/Q3"), _CTX)
     assert mock.call_args.args[1] == "Reports/Q3"
     assert result["id"] == "f1"
 
@@ -162,11 +162,11 @@ async def test_create_folder_delegates_to_ensure_folder_exists():
 async def test_create_folder_returns_structured_error():
     with patch("ms_graph_mcp.files_write.ensure_folder_exists", new=AsyncMock()) as mock:
         mock.side_effect = OneDriveError("nope")
-        result = await create_folder(CreateFolderInput(folder_path="x"), _CTX)
+        result = await files_create_folder(CreateFolderInput(folder_path="x"), _CTX)
     assert result["error"] == "create_folder_failed"
 
 
-# ── create_sharing_link ───────────────────────────────────────────────────────
+# ── files_create_sharing_link ───────────────────────────────────────────────────────
 
 
 async def test_create_sharing_link_defaults_to_organisation_view():
@@ -174,7 +174,7 @@ async def test_create_sharing_link_defaults_to_organisation_view():
         post.return_value = {
             "link": {"webUrl": "https://share/x", "type": "view", "scope": "organization"}
         }
-        result = await create_sharing_link(CreateSharingLinkInput(item_id="i1"), _CTX)
+        result = await files_create_sharing_link(CreateSharingLinkInput(item_id="i1"), _CTX)
     body = post.call_args.args[2]
     assert body == {"type": "view", "scope": "organization"}
     assert post.call_args.args[1] == "/me/drive/items/i1/createLink"
@@ -184,7 +184,7 @@ async def test_create_sharing_link_defaults_to_organisation_view():
 async def test_create_sharing_link_addresses_a_named_drive():
     with patch("ms_graph_mcp.files_write.graph_post", new=AsyncMock()) as post:
         post.return_value = {"link": {}}
-        await create_sharing_link(
+        await files_create_sharing_link(
             CreateSharingLinkInput(item_id="i1", drive_id="d9", link_type="edit"), _CTX
         )
     assert post.call_args.args[1] == "/drives/d9/items/i1/createLink"
@@ -200,7 +200,7 @@ async def test_create_sharing_link_addresses_a_named_drive():
 )
 async def test_create_sharing_link_rejects_bad_enums_before_calling_graph(kwargs):
     with patch("ms_graph_mcp.files_write.graph_post", new=AsyncMock()) as post:
-        result = await create_sharing_link(CreateSharingLinkInput(**kwargs), _CTX)
+        result = await files_create_sharing_link(CreateSharingLinkInput(**kwargs), _CTX)
     post.assert_not_called()
     assert result["error"] == "invalid_arguments"
 
@@ -212,7 +212,7 @@ async def test_create_sharing_link_explains_a_403_rather_than_leaking_http():
         post.side_effect = httpx.HTTPStatusError(
             "forbidden", request=response.request, response=response
         )
-        result = await create_sharing_link(
+        result = await files_create_sharing_link(
             CreateSharingLinkInput(item_id="i1", scope="anonymous"), _CTX
         )
     assert result["error"] == "sharing_forbidden"
@@ -222,7 +222,7 @@ async def test_create_sharing_link_explains_a_403_rather_than_leaking_http():
 async def test_create_sharing_link_rejects_an_injected_item_id():
     with patch("ms_graph_mcp.files_write.graph_post", new=AsyncMock()) as post:
         with pytest.raises(ValueError):
-            await create_sharing_link(CreateSharingLinkInput(item_id="../../me/drive"), _CTX)
+            await files_create_sharing_link(CreateSharingLinkInput(item_id="../../me/drive"), _CTX)
     post.assert_not_called()
 
 
@@ -231,7 +231,7 @@ async def test_create_sharing_link_rejects_an_injected_item_id():
 
 @pytest.mark.parametrize(
     "name",
-    ["upload_file", "update_file_content", "create_folder", "create_sharing_link"],
+    ["files_upload", "files_update_content", "files_create_folder", "files_create_sharing_link"],
 )
 async def test_promoted_write_tools_are_refused_without_write_scope(name, call_tool):
     """Promotion must not have leaked a mutation onto the always-on read surface."""

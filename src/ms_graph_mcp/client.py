@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import urllib.parse
+from dataclasses import dataclass
 
 import httpx
 from opentelemetry import trace
@@ -242,6 +243,92 @@ async def graph_post_no_content(
             resp.raise_for_status()
 
 
+@dataclass(frozen=True)
+class GraphResult:
+    """A Graph response whose status the caller wants to branch on.
+
+    ``status_code`` is the whole point: several Graph flows treat a specific
+    failure as a signal rather than an error. A 403 from the ``JoinWebUrl``
+    filter means "you attended this meeting but did not organise it", which
+    selects a different lookup strategy — not something to raise on.
+    """
+
+    status_code: int
+    ok: bool
+    text: str
+    content_type: str = ""
+    _payload: dict | None = None
+
+    def json(self) -> dict:
+        """Parsed body, or ``{}`` when the response was not JSON."""
+        return self._payload or {}
+
+
+async def graph_try_get(
+    access_token: str,
+    path: str,
+    *,
+    accept: str = "application/json",
+    timeout_seconds: float = 30.0,
+    headers: dict[str, str] | None = None,
+    follow_redirects: bool = False,
+    **params,
+) -> GraphResult:
+    """GET from Microsoft Graph and return the outcome **without raising**.
+
+    :func:`graph_get` calls ``raise_for_status()``, which is right when any
+    failure is an error. It is wrong wherever the status itself carries meaning
+    — an attendee hitting an organizer-only filter, or a transcript that simply
+    has no content yet.
+
+    Before this existed those callers hand-rolled ``httpx``, and in doing so
+    lost the tracing span, the ``[Graph]`` error logging and the TLS toggle. Use
+    this instead of reaching for a client.
+    """
+    extra = dict(headers or {})
+    url = _build_url(f"{_GRAPH_BASE}{path}", **params) if params else f"{_GRAPH_BASE}{path}"
+    request_headers = _headers(access_token)
+    request_headers["Accept"] = accept
+    request_headers.update(extra)
+
+    with _tracer.start_as_current_span(
+        "graph.request",
+        attributes={"http.method": "GET", "http.url": url},
+    ) as span:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify,
+            timeout=httpx.Timeout(timeout_seconds),
+            # File content endpoints answer 302 with a short-lived download URL
+            # on a different host, so the redirect has to be followed to get any
+            # bytes at all.
+            follow_redirects=follow_redirects,
+        ) as client:
+            logger.info("[Graph] GET %s", path)
+            resp = await client.get(url, headers=request_headers)
+            span.set_attribute("http.status_code", resp.status_code)
+            if not resp.is_success:
+                # Recorded as an event, not a span error: the caller may well
+                # treat this status as an expected branch.
+                span.add_event("graph.non_success", {"status_code": resp.status_code})
+                _log_error(resp)
+            else:
+                logger.info("[Graph] GET %s → %s", path, resp.status_code)
+
+            payload: dict | None = None
+            if resp.is_success and accept.startswith("application/json"):
+                try:
+                    payload = resp.json()
+                except ValueError:
+                    payload = None
+            return GraphResult(
+                status_code=resp.status_code,
+                ok=resp.is_success,
+                text=resp.text,
+                content_type=resp.headers.get("content-type", ""),
+                _payload=payload,
+            )
+
+
 async def graph_post_raw(
     access_token: str,
     path: str,
@@ -282,6 +369,60 @@ async def graph_post_raw(
                 logger.info("[Graph] POST %s → %s", path, resp.status_code)
             resp.raise_for_status()
             return resp.json()
+
+
+async def graph_put_raw(
+    access_token: str,
+    path: str,
+    content: bytes,
+    content_type: str,
+    *,
+    extra_headers: dict[str, str] | None = None,
+    timeout_seconds: float = 60.0,
+) -> GraphResult:
+    """PUT a raw byte body to a Graph path, returning the outcome without raising.
+
+    File uploads and in-place content replacement both PUT bytes rather than a
+    JSON document, and both need to branch on the status: 412 means the item
+    changed under an ``If-Match``, which the caller reports as a conflict rather
+    than a failure.
+    """
+    url = f"{_GRAPH_BASE}{path}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": content_type or "application/octet-stream",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    with _tracer.start_as_current_span(
+        "graph.request",
+        attributes={"http.method": "PUT", "http.url": url, "graph.upload.size": len(content)},
+    ) as span:
+        async with httpx.AsyncClient(
+            verify=not get_config().disable_ssl_verify,
+            timeout=httpx.Timeout(timeout_seconds),
+        ) as client:
+            logger.info("[Graph] PUT %s (%d bytes)", path, len(content))
+            resp = await client.put(url, headers=headers, content=content)
+            span.set_attribute("http.status_code", resp.status_code)
+            if not resp.is_success:
+                span.add_event("graph.non_success", {"status_code": resp.status_code})
+                _log_error(resp)
+            else:
+                logger.info("[Graph] PUT %s → %s", path, resp.status_code)
+            payload: dict | None = None
+            if resp.is_success:
+                try:
+                    payload = resp.json()
+                except ValueError:
+                    payload = None
+            return GraphResult(
+                status_code=resp.status_code,
+                ok=resp.is_success,
+                text=resp.text,
+                content_type=resp.headers.get("content-type", ""),
+                _payload=payload,
+            )
 
 
 async def graph_patch(

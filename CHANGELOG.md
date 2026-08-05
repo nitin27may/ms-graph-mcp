@@ -24,8 +24,75 @@ change between minor versions; breaking changes are called out explicitly.
 - Cache hints on `tools/list` (`ttlMs` 5 minutes, `cacheScope: public`), which improve client-side
   prompt-cache hit rates on a tool list that only changes with the caller's scopes.
 
+- Every tool now declares MCP annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+  `openWorldHint`) so clients can tell a calendar read from a mail send.
+- `errors.py` — terminal structured errors carrying `retryable`, plus the required scope on a
+  permission denial, so a model stops retrying a call that can never succeed.
+- `client.py` gained `graph_post_no_content`, `graph_post_raw`, `graph_put_raw` and
+  `graph_try_get`, covering the request shapes that previously forced modules to hand-roll httpx.
+- **Interactive sign-in for the stdio transport.** Set `GRAPH_MCP_CLIENT_ID` and
+  `GRAPH_MCP_TENANT_ID` and the server signs the user in through the browser — normal Microsoft 365
+  SSO including MFA and conditional access — instead of requiring a pre-acquired token in a config
+  file. Falls back to device code over SSH or in containers. Tokens are cached owner-only under
+  `~/.ms-graph-mcp/`, and refreshed on every tool call so a session does not go stale after an hour.
+  `GRAPH_MCP_ACCESS_TOKEN` still works for CI.
+- `GRAPH_MCP_SCOPES` — the delegated scopes requested at sign-in. Read-only by default.
+- README: app-registration walkthrough and copy-paste config for VS Code, Claude Code, Claude
+  Desktop and MCP Inspector, plus a troubleshooting table for the common Entra errors.
+- **Mail actions** (4 tools). `mail_reply`, `mail_reply_all`, `mail_forward`, `mail_mark_read`.
+  Forwarding is subject to the recipient-domain allowlist because the caller chooses the
+  recipients; replying is not, because the thread fixes them.
+- **Teams chats** (4 tools). `chat_list`, `chat_list_messages`, `chat_send_message`,
+  `chat_list_members` — the 1:1 and group conversations, where most Teams activity actually
+  happens. Previously only channels were reachable.
+- **Unified search** (1 tool). `search_query` over `POST /search/query`, spanning mail, calendar,
+  files, SharePoint sites and lists, and people in a single call.
+- **OneNote page reads** (2 tools). `notes_list_pages` and `notes_get_page_content` — the server
+  could write a page but not read one back.
+- **Contacts** (3 tools). `people_list_contacts`, `people_search_contacts`,
+  `people_create_contact`. The personal address book is the only place external contacts live,
+  invisible to both `people_search` and `directory_search_users`.
+- **Task writes for To Do and Planner** (5 tools). `tasks_complete_todo`, `tasks_update_todo`,
+  `tasks_create_planner`, `tasks_update_planner`, `tasks_complete_planner`. Planner writes handle
+  the ETag it requires on every change: each is read-then-write, and a concurrent edit comes back
+  as a retryable `CONFLICT` rather than silently overwriting someone.
+- **Calendar write and scheduling** (6 tools). `calendar_create_event`, `calendar_update_event`,
+  `calendar_cancel_event` and `calendar_respond_to_event` in the write tier;
+  `calendar_find_meeting_times` and `calendar_get_free_busy` in the **read** tier — both are POST
+  because their request body is too large for a query string, but neither mutates anything.
+  Booking was the largest functional gap in the surface.
+- `GRAPH_MCP_READ_ONLY` — removes the write tier from a deployment entirely. Write tools are never
+  advertised and never dispatchable, whatever scope a caller presents. Enforced at dispatch as well
+  as in `tools/list`, because hiding a tool is a context measure rather than a boundary.
+- [ADR 0003](docs/adr/0003-no-gateway-trust-mode.md) recording that token validation always runs
+  in-server and that no gateway-trust bypass will be added. A test asserts no such setting exists.
+
 ### Changed
 
+- **BREAKING: `GRAPH_MCP_JWT_VERIFY` now defaults to `true`.** It previously defaulted to `false`,
+  which meant an HTTP deployment accepted tokens without verifying their signatures unless someone
+  had read the docs — the unsafe value was the one you got by doing nothing. stdio is unaffected, as
+  it validates no tokens at all. If you run the HTTP transport without JWKS connectivity and
+  knowingly want the old behaviour, set `GRAPH_MCP_JWT_VERIFY=false` explicitly.
+- **All 51 agent-facing tools renamed to namespace-prefixed names** — `mail_search`,
+  `calendar_list_upcoming_events`, `files_upload`, `directory_search_users` and so on. Namespaces
+  follow Graph permission families rather than Microsoft product names. **Every previous name still
+  works as an alias** and will keep working until 0.3.0; aliases are accepted by `tools/call` but
+  never advertised in `tools/list`.
+- Every tool description rewritten to 200–400 characters covering what it does, when to use it,
+  what it returns, how it differs from neighbouring tools, and the delegated permission required.
+  Previously 83% were under 200 characters, with the shortest at 33 — too terse for a model to
+  choose between `people_search`, `directory_search_users` and `people_list_contacts`.
+- `chat_search_messages` no longer disguises failures as empty results. It previously returned `[]`
+  for any non-200, so a missing `Chat.Read` permission was indistinguishable from "no messages
+  matched".
+- References to the monorepo this package was extracted from are gone. The self-containment test
+  no longer checks a hardcoded list of former sibling packages; it now derives the allowed import
+  set from `pyproject.toml`, so an undeclared dependency fails the build here rather than on a
+  user's machine.
+- Raw `httpx` clients removed from every domain module — 14 in `meetings.py` alone. The two that
+  remain target pre-signed upload/download URLs on other hosts, which are not Graph API calls and
+  must not carry the Authorization header.
 - **Migrated to MCP Python SDK 2.0** and the 2026-07-28 protocol revision. Handlers are now
   constructor callbacks (`on_list_tools` / `on_call_tool`) returning `ListToolsResult` /
   `CallToolResult`, and the low-level `Server` builds the Starlette app itself. 2025-era clients are

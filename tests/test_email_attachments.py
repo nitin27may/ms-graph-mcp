@@ -291,7 +291,7 @@ def test_empty_message_returns_empty():
     assert out == []
 
 
-# ── list_email_attachments (agent surface) ────────────────────────────────────
+# ── mail_list_attachments (agent surface) ────────────────────────────────────
 # Distinct from fetch_message_attachments above: the agent-facing tool returns
 # metadata only. Handing a model base64 file content is useless to it and
 # enormously expensive in tokens — downloading stays in the internal tier.
@@ -299,7 +299,7 @@ def test_empty_message_returns_empty():
 
 class TestListEmailAttachmentsTool:
     async def test_returns_metadata_without_content(self):
-        from ms_graph_mcp.email import ListEmailAttachmentsInput, list_email_attachments
+        from ms_graph_mcp.email import ListEmailAttachmentsInput, mail_list_attachments
 
         payload = {
             "value": [
@@ -313,7 +313,7 @@ class TestListEmailAttachmentsTool:
             ]
         }
         with patch("ms_graph_mcp.email.graph_get", new=AsyncMock(return_value=payload)) as get:
-            result = await list_email_attachments(
+            result = await mail_list_attachments(
                 ListEmailAttachmentsInput(message_id="msg1"), {"access_token": "tok"}
             )
 
@@ -331,7 +331,7 @@ class TestListEmailAttachmentsTool:
         assert get.call_args.args[1] == "/me/messages/msg1/attachments"
 
     async def test_inline_signature_images_are_excluded(self):
-        from ms_graph_mcp.email import ListEmailAttachmentsInput, list_email_attachments
+        from ms_graph_mcp.email import ListEmailAttachmentsInput, mail_list_attachments
 
         payload = {
             "value": [
@@ -340,17 +340,17 @@ class TestListEmailAttachmentsTool:
             ]
         }
         with patch("ms_graph_mcp.email.graph_get", new=AsyncMock(return_value=payload)):
-            result = await list_email_attachments(
+            result = await mail_list_attachments(
                 ListEmailAttachmentsInput(message_id="msg1"), {"access_token": "tok"}
             )
         assert [a["name"] for a in result] == ["report.docx"]
 
     async def test_rejects_an_injected_message_id(self):
-        from ms_graph_mcp.email import ListEmailAttachmentsInput, list_email_attachments
+        from ms_graph_mcp.email import ListEmailAttachmentsInput, mail_list_attachments
 
         with patch("ms_graph_mcp.email.graph_get", new=AsyncMock()) as get:
             with pytest.raises(ValueError):
-                await list_email_attachments(
+                await mail_list_attachments(
                     ListEmailAttachmentsInput(message_id="../../me/messages"),
                     {"access_token": "tok"},
                 )
