@@ -61,6 +61,9 @@ Then, on the new app:
   People.Read  Chat.Read  Tasks.Read  Notes.Read  Contacts.Read
   ```
 
+  The complete, copy-paste consent set — and which permission each individual tool needs — is in
+  [docs/permissions.md](docs/permissions.md).
+
 Copy the **Application (client) ID** and **Directory (tenant) ID** from the Overview page.
 
 ### 2. Get the code and run it
@@ -261,7 +264,39 @@ GRAPH_MCP_WRITE_SCOPE=true
 | `SCOPE_DENIED` from a tool | The permission that tool needs was not consented. The error names it — add it in **API permissions** and sign in again. |
 | Sign-in prompts every time | The cache at `~/.ms-graph-mcp/token_cache.json` is not writable. |
 | Browser never opens | Expected over SSH or in containers — use the device code printed to stderr. |
+| `AADSTS53003`, or "You cannot access this right now" **after** a successful sign-in | A Conditional Access policy requires a registered or compliant device. See below. |
 | Client shows "server disconnected" | Run the same command in a terminal; startup errors go to stderr and the client usually hides them. |
+
+#### AADSTS53003 — blocked by Conditional Access
+
+Your credentials were accepted and the sign-in *succeeded*; a policy then refused the token. Click
+**More details** on the error page and look at the device lines:
+
+```
+Error Code:        53003
+Device platform:   macOS
+Device state:      Unregistered      <- the cause
+Device identifier: Not available
+```
+
+Your tenant requires a **registered or compliant device**, and a plain system browser has no device
+identity to present. This is why Outlook and Teams still work: they sign in through the **Microsoft
+Enterprise SSO plug-in** (shipped with Company Portal / Intune), which holds that identity.
+
+**Nothing in the app registration fixes this.** Conditional Access is evaluated separately from app
+configuration — not API permissions, not redirect URIs, not "allow public client flows". Your
+registration is already fine; the sign-in got past it.
+
+Two real fixes:
+
+1. **Register the device.** Install Company Portal and sign in; device state becomes Registered and
+   the policy is satisfied. Your existing configuration then works unchanged.
+2. **Ask an admin to exclude the app.** Entra → Protection → Conditional Access → find the policy
+   (Sign-in logs → the failed entry → **Conditional Access** tab names it) → exclude this
+   application id, or your account.
+
+Device-code sign-in is **not** a workaround — it fails the same device check, and many tenants block
+that flow outright as a phishing vector.
 
 ## Streamable HTTP — hosted deployments
 
@@ -397,6 +432,7 @@ server refuses to serve a partial surface instead of silently dropping a tool.
 | [SECURITY.md](SECURITY.md) | Reporting vulnerabilities, and the settings to change before exposing this beyond localhost |
 | [CHANGELOG.md](CHANGELOG.md) | Release history |
 | [CLAUDE.md](CLAUDE.md) | Architecture and the non-obvious traps, for coding agents and new contributors alike |
+| [docs/permissions.md](docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
 | [docs/graph-coverage.md](docs/graph-coverage.md) | What this server covers of the Graph v1.0 surface, what it does not, and what is out of scope |
 | [docs/adr/](docs/adr/) | Architecture Decision Records |
 

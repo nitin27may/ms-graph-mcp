@@ -88,10 +88,11 @@ def _summarise_hit(hit: dict) -> dict:
 
 @tool(
     description=(
-        "Search across Microsoft 365 in one call — email, calendar events, OneDrive and SharePoint "
-        "files, sites, lists and people. Best first move for a vague request, because it spans "
-        "workloads no single other tool covers. Choose entity types to narrow it. Supports KQL "
-        "such as 'budget filetype:xlsx'. Permissions vary by entity type searched."
+        "Search across Microsoft 365 in one call — email, calendar events, files, SharePoint "
+        "sites and lists, and people. Best first move for a vague request, since it spans "
+        "workloads no other single tool covers. Supports KQL such as 'budget filetype:xlsx'. "
+        "Each entity type needs its own permission. Requires Mail.Read, Calendars.Read, "
+        "Files.Read.All, Sites.Read.All and People.Read."
     ),
     annotations=READ_ONLY,
 )
