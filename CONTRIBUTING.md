@@ -58,14 +58,20 @@ Four steps. Steps 3 and 4 are not optional — skipping them breaks the server o
    that changing the tool surface is a deliberate edit rather than an accident.
 
 5. **Name the delegated permission in the description** — `… Requires Mail.Read.` — and regenerate
-   the matrix:
+   the derived documentation:
 
    ```bash
-   uv run python scripts/generate_permissions.py
+   uv run python scripts/generate_permissions.py   # docs/permissions.md, from the descriptions
+   uv run python scripts/check_docs.py             # tool counts quoted in prose
    ```
 
-   `docs/permissions.md` is generated from those descriptions, and CI fails if the committed copy
-   is stale.
+   `docs/permissions.md` is generated from those descriptions. The counts quoted in `README.md`,
+   `CLAUDE.md` and `docs/` are derived from the allowlists. CI runs both with `--check`, so a stale
+   copy fails the PR rather than reaching a reader.
+
+   `check_docs.py` also fails when one of its patterns matches *nothing*. Rewording a sentence it
+   anchors on would otherwise leave that number silently unchecked from then on — the same drift,
+   just quieter.
 
 Anything caller-supplied that ends up in a Graph path or an OData `$filter` must go through the
 helpers in `odata.py` — `validate_graph_id`, `validate_mail_folder`, `validate_task_status`,
@@ -107,7 +113,8 @@ Write the subject and body, then stop.
 - One concern per PR. A formatting sweep and a behaviour change in the same diff is two PRs.
 - New tools need tests against a mocked Graph, in the style of the existing domain tests.
 - Update `CHANGELOG.md` under `## [Unreleased]`.
-- Note any new environment variable in `README.md`.
+- Note any new environment variable in **both** `docs/configuration.md` and `.env.example`. The
+  README carries only the handful needed to get running.
 
 ## Reporting security issues
 

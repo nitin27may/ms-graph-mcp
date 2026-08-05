@@ -95,7 +95,9 @@ class GraphMcpConfig(BaseSettings):
         validation_alias=AliasChoices("GRAPH_MCP_SCOPES"),
     )
 
-    # Comma-separated allowlist of recipient domains for send_email / propose_email.
+    # Comma-separated allowlist of recipient domains for mail_send / mail_forward
+    # — the two tools where the caller picks the recipients. Replies are not
+    # gated: the thread already fixes who they go to.
     # Empty string = gate disabled (any domain).
     send_email_allowed_domains: str = Field(
         default="",

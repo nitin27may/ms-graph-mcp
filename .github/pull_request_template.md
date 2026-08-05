@@ -18,6 +18,11 @@
 - [ ] Any caller-supplied value in a Graph path or `$filter` goes through `odata.py`
 - [ ] Tests added against a mocked Graph
 - [ ] Delegated permissions documented in the tool description
+- [ ] `scripts/generate_permissions.py` and `scripts/check_docs.py` re-run
+
+## If this adds a setting
+
+- [ ] Documented in `docs/configuration.md` **and** `.env.example`
 
 ## If this touches auth or tier enforcement
 

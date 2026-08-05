@@ -47,6 +47,12 @@ jobs:
       - name: permissions doc is current
         run: uv run python scripts/generate_permissions.py --check
 
+      # Tool counts quoted in prose drift silently the first time a tool is
+      # added — nothing about adding one has a reason to touch the sentence.
+      # Derived from the allowlists, so a stale number fails the PR.
+      - name: documented counts are current
+        run: uv run python scripts/check_docs.py --check
+
   test:
     name: test (py${{ matrix.python-version }})
     runs-on: ubuntu-latest

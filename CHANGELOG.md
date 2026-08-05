@@ -8,6 +8,48 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/check_docs.py` — derives every tool count quoted in prose from the allowlists, the
+  registry and the profile definitions, and rewrites or `--check`s them. It also fails when one of
+  its patterns matches *nothing*, so rewording a sentence cannot silently retire the check anchored
+  on it. Wired into CI beside the existing permissions check, and covered by
+  `tests/test_doc_counts.py`.
+- `ToolRegistry.aliases()`, the read-only counterpart to `names()`.
+- **New documentation pages.** `docs/README.md` (index), `docs/configuration.md` (every environment
+  variable, split by deployment shape), `docs/hosting.md` (Streamable HTTP, headers, Docker/GHCR),
+  `docs/troubleshooting.md` (Entra errors, Conditional Access, corporate TLS proxies) and
+  `docs/roadmap.md`.
+- `.env.example` now documents `GRAPH_MCP_RESOURCE_URL`, `GRAPH_MCP_ALLOWED_HOSTS`,
+  `GRAPH_MCP_LOG_LEVEL` and `GRAPH_MCP_CACHE_DIR`, which were settings with no entry.
+
+### Changed
+
+- **The README leads with the package.** `uvx --from ms-graph-mcp ms-graph-mcp` is the primary
+  install path, with running from a clone kept as the second, for forking and contributing. Client
+  configuration is now a section of its own — the canonical stdio block, a table of where each
+  client's config file lives, copy-paste blocks for VS Code, Claude Code, Claude Desktop, Cursor,
+  Windsurf and MCP Inspector, and how to confirm each one connected. Configuration detail, hosted
+  deployment and troubleshooting moved into `docs/`.
+- `docs/graph-coverage.md` rewritten against the current surface. It described 55 tools using
+  pre-0.2.0 names, and listed as future work seven things that shipped in 0.2.0.
+- The roadmap holds only what is *not* done, and lives in `docs/roadmap.md`. Shipped work is deleted
+  from it rather than ticked — the changelog is where history belongs.
+
+### Fixed
+
+- **The README said the package was not on PyPI.** It has been published since `0.2.0`, and every
+  install instruction routed readers to a `git clone` that was never necessary.
+- Tool counts quoted across `README.md`, `CLAUDE.md`, `docs/` and several test docstrings were stale
+  by up to 30 tools — `CLAUDE.md` claimed 60 tools with 43 read and 8 write, against an actual
+  85 / 53 / 23.
+- `CLAUDE.md` and `config.py` named `mail_propose` as subject to
+  `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS`. The gated tools are `mail_send` and `mail_forward` — the
+  two where the caller chooses the recipients.
+- The README said the pre-0.2.0 tool aliases would keep working until `0.3.0`;
+  `deprecations.py` has always said `0.4.0`.
+- `docs/permissions.md` linked to a README anchor that no longer exists.
+
 ## [0.2.0] - 2026-08-05
 
 ### Added

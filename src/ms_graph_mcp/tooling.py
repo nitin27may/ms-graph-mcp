@@ -280,6 +280,10 @@ class ToolRegistry:
         """Canonical names only — never aliases."""
         return list(self._tools)
 
+    def aliases(self) -> list[str]:
+        """Superseded names still honoured by ``call`` — never advertised."""
+        return list(self._aliases)
+
     def openai_specs(self, tools: list[Callable]) -> list[dict[str, Any]]:
         """
         Convert a list of tool functions into the OpenAI function-calling format:

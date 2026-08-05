@@ -16,7 +16,7 @@ body:
     attributes:
       label: Version
       description: "`pip show ms-graph-mcp`, or the commit SHA if running from source"
-      placeholder: "0.1.0"
+      placeholder: "0.2.0"
     validations:
       required: true
 
