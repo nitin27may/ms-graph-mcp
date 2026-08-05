@@ -263,6 +263,71 @@ jobs:
           echo "$REQ" | timeout 30 /tmp/verify/bin/ms-graph-mcp 2>/dev/null \
             | head -1 | python -c 'import json,sys; r=json.load(sys.stdin); assert r["result"]["serverInfo"]["name"]; print("handshake OK:", r["result"]["protocolVersion"])'
 
+      # The safety property the whole pre-release design rests on: a candidate
+      # must be invisible to a plain `pip install`, and reachable with --pre.
+      #
+      # Checked per release against the real index rather than assumed, because
+      # it is the assumption the `gate` step acts on, and because it would fail
+      # silently if a release were ever mis-versioned — publishing 0.2.0 from an
+      # -rc tag would look fine everywhere except here.
+      # The safety property the whole pre-release design rests on: a candidate
+      # must be invisible to a plain `pip install`, and reachable with --pre.
+      #
+      # Checked per release against the real index rather than assumed. It is
+      # the assumption the `gate` step acts on, and it would fail silently if a
+      # release were ever mis-versioned — publishing 0.2.0 from an -rc tag would
+      # look correct everywhere except here.
+      - name: Check the pre-release flag behaves
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          python -m pip install --quiet packaging
+
+          # Index flags are repeated rather than held in a variable: relying on
+          # word-splitting an unquoted "$FLAGS" works in bash and silently does
+          # not in zsh, which is a poor thing for a release to depend on.
+          resolve() {
+            /tmp/verify/bin/pip install --dry-run --no-deps \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "$@" ms-graph-mcp 2>/dev/null \
+              | grep -oE "ms[-_]graph[-_]mcp-[0-9][^ ]*" | tail -1 \
+              | sed "s/^ms[-_]graph[-_]mcp-//"
+          }
+
+          PLAIN=$(resolve)
+          PRE=$(resolve --pre)
+          echo "plain  -> ${PLAIN:-<nothing>}"
+          echo "--pre  -> ${PRE:-<nothing>}"
+
+          python - "$VERSION" "$PLAIN" "$PRE" <<'PYEOF'
+          import sys
+          from packaging.version import Version
+
+          version, plain, pre = (a or None for a in sys.argv[1:4])
+          published = Version(version)
+
+          if pre is None:
+              sys.exit("::error::--pre resolved nothing; the published artifact is unreachable")
+
+          if not published.is_prerelease:
+              print(f"{published} is stable; nothing to assert about --pre.")
+              raise SystemExit
+
+          if plain is None:
+              print("Nothing resolves without --pre: no stable exists on this index yet.")
+              print("That is exactly the case the `gate` step keeps off PyPI.")
+              raise SystemExit
+
+          if Version(plain).is_prerelease:
+              sys.exit(
+                  f"::error::A plain `pip install` selected the pre-release {plain}. "
+                  "A candidate must never be what an ordinary user gets."
+              )
+
+          print(f"OK: plain install selects {plain}; the candidate {published} needs --pre.")
+          PYEOF
+
   pypi:
     name: publish to PyPI
     # Stable releases always; candidates only once a stable exists to shadow
