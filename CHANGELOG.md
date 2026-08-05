@@ -8,6 +8,8 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-05
+
 ### Added
 
 - `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, and this changelog.
@@ -185,5 +187,6 @@ Initial extraction from the agent platform this server was built for.
   `Retry-After`, and a host allowlist on caller-supplied URLs.
 - Meeting transcript and attendance-report retrieval.
 
-[Unreleased]: https://github.com/nitin27may/ms-graph-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/nitin27may/ms-graph-mcp/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/nitin27may/ms-graph-mcp/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/nitin27may/ms-graph-mcp/releases/tag/v0.1.0
