@@ -29,8 +29,10 @@ wheel fails the PR rather than a user's first install.
 | Tool contract | `test_tools_contract.py` (326) | Annotations, description length, error discipline — every tool, parametrized |
 | Security tiers | `test_security_defaults.py`, `test_internal_tier.py`, `test_allowlists.py` | Read/write/internal separation, `GRAPH_MCP_READ_ONLY`, the machine principal |
 | Protocol | `test_protocol_conformance.py` (16) | The wire format, via a real client session |
-| Auth | `tests/entra/` (56) | Token validation against a real RS256 keypair |
-| Transport | `test_app.py`, `test_auth.py`, `test_oauth_discovery.py` | Middleware, discovery, host policy |
+| Auth | `tests/entra/` (60) | Token validation against a real RS256 keypair |
+| Auth posture | `test_obo_posture.py`, `test_obo.py` | Audience binding, the scope gate, write-scope binding, claims-challenge propagation |
+| Transport split | `test_stdio_unaffected.py` | That stdio performs no OBO exchange, whatever `GRAPH_MCP_DOES_OBO` says |
+| Transport | `test_app.py`, `test_auth.py`, `test_oauth_discovery.py` | Middleware, discovery, host policy, startup validation |
 | Documentation | `test_permissions_doc.py`, `test_doc_counts.py` | The permission matrix and every tool count quoted in prose, against the code |
 | Domains | `test_meetings.py`, `test_calendar_write.py`, … | Per-tool behaviour against mocked Graph responses |
 
@@ -40,7 +42,7 @@ Two pytest settings shape how tests are written:
 - **`--import-mode=importlib`** — lets `tests/test_config.py` and `tests/entra/test_config.py`
   coexist without `__init__.py` files.
 
-## The three that catch what the others cannot
+## The four that catch what the others cannot
 
 ### `test_tools_contract.py` — drift, on every tool at once
 
@@ -75,6 +77,21 @@ including signature verification, issuer and audience checks.
 **Extend these fixtures rather than mocking `verify_token`.** Mocking the verifier tests that the
 call happens; it does not test that a forged token is rejected, which is the only property that
 matters.
+
+### `test_stdio_unaffected.py` — a boundary, asserted from the outside
+
+The on-behalf-of exchange belongs to the HTTP transport. stdio holds a token from interactive
+sign-in, which is *already* a Graph token — Entra refuses to redeem a token audienced to another
+app, so an exchange attempted there is not a degraded path but a total outage for every local
+client.
+
+That used to be guaranteed by a default rather than a boundary: the exchange sat in shared dispatch,
+gated on `GRAPH_MCP_DOES_OBO`, and stdio was safe only because the flag was off. This file turns the
+flag **on** and asserts nothing happens — so the guarantee is tested from the caller's side rather
+than trusted to code structure that a later refactor might undo.
+
+It earned itself immediately. Against the old code it did not merely fail: it tripped the suite's
+no-network guard with a live connection to `login.microsoftonline.com`.
 
 ## Gotchas
 

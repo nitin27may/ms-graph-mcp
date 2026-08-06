@@ -183,6 +183,7 @@ the correlation id from a failed exchange is, and it is what Microsoft support w
 
 ## See also
 
+- [glossary.md](glossary.md) — `aud`, `azp`, `scp`, FIC, blueprint, and the rest of the vocabulary
 - [configuration.md](configuration.md) — every setting
 - [hosting.md](hosting.md) — running the HTTP transport
 - [ADR 0004](adr/0004-resource-server-by-default.md) — why this is the default

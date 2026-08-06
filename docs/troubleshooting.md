@@ -17,6 +17,9 @@ once the server is running, see [debugging.md](debugging.md).
 | Tools are missing from the list | `GRAPH_MCP_TOOLSETS` defaults to `core`. Teams chat, Planner, OneNote, transcripts and directory are not in it — name those profiles, or set `all`. |
 | Write tools are missing | They need `GRAPH_MCP_WRITE_SCOPE=true` *and* the matching scopes, and are absent entirely if `GRAPH_MCP_READ_ONLY` is set. |
 | `421 Misdirected Request` from a hosted deployment | `GRAPH_MCP_RESOURCE_URL` is not set, so the transport trusts only localhost. See [hosting.md](hosting.md#set-graph_mcp_resource_url-when-you-deploy-behind-a-proxy). |
+| The HTTP server refuses to start, listing credential options | Resource-server mode with no certificate, federated token file or client secret. Startup validation, not a bug — see [agent-auth.md](agent-auth.md#2-give-it-a-credential). |
+| `401` with `audience mismatch` from a hosted deployment | The caller asked Entra for a Graph token. It must request one for `api://<mcp-client-id>`. See [agent-auth.md](agent-auth.md). |
+| `401` carrying a `claims` parameter | Conditional Access wants step-up. The client must acquire a new token presenting those claims — this is the flow working, not failing. |
 | `[SSL: CERTIFICATE_VERIFY_FAILED]` when calling Graph tools | A TLS-inspecting proxy is re-signing Graph traffic with a chain your Python/OpenSSL runtime does not trust. [See below](#ssl-certificate-verify-failures-behind-corporate-proxies). |
 
 ## First: run the server in a terminal

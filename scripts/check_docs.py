@@ -32,6 +32,7 @@ from ms_graph_mcp.allowlists import (
     READ_TOOL_NAMES,
     WRITE_TOOL_NAMES,
 )
+from ms_graph_mcp.deprecations import DEPRECATIONS
 from ms_graph_mcp.tooling import get_registry
 from ms_graph_mcp.toolsets import ALL_PROFILE, PROFILES, filter_tool_names
 
@@ -133,6 +134,11 @@ def _checks() -> list[Check]:
             len(get_registry().aliases()),
             (r"the (?P<n>\d+) pre-namespace tool aliases",),
         ),
+        Check(
+            "registered deprecations",
+            len(DEPRECATIONS),
+            (r"(?P<n>\d+) registered deprecation",),
+        ),
     ]
 
     # The README's namespace breakdown: "mail 11 · tasks 11 · calendar 10 · …".
@@ -159,10 +165,10 @@ def _checks() -> list[Check]:
     return checks
 
 
-def _test_count_check() -> Check:
-    """Collected test count. Kept out of ``_checks()`` — it shells out."""
+def _collected(path: str) -> int:
+    """How many tests pytest collects under ``path``."""
     out = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+        [sys.executable, "-m", "pytest", path, "--collect-only", "-q"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -170,8 +176,39 @@ def _test_count_check() -> Check:
     ).stdout
     match = re.search(r"(\d+) tests collected", out)
     if match is None:  # pragma: no cover - pytest changed its summary line
-        raise RuntimeError("could not read the collected test count from pytest")
-    return Check("tests", int(match.group(1)), (r"^(?P<n>\d+) tests, all offline",))
+        raise RuntimeError(f"could not read the collected test count for {path}")
+    return int(match.group(1))
+
+
+def _test_count_checks() -> list[Check]:
+    """Test counts quoted in ``docs/testing.md``.
+
+    Kept out of ``_checks()`` because they shell out to pytest — which is also
+    why ``tests/test_doc_counts.py`` does not cover them. A suite that collects
+    itself to assert its own size is a loop worth avoiding.
+
+    The per-area numbers in the arrangement table drift the same way the total
+    does: adding four tests to ``tests/entra/`` has no reason to touch the
+    sentence quoting 56.
+    """
+    return [
+        Check("tests", _collected("tests"), (r"^(?P<n>\d+) tests, all offline",)),
+        Check(
+            "tool-contract tests",
+            _collected("tests/test_tools_contract.py"),
+            (r"`test_tools_contract\.py` \((?P<n>\d+)\)",),
+        ),
+        Check(
+            "protocol tests",
+            _collected("tests/test_protocol_conformance.py"),
+            (r"`test_protocol_conformance\.py` \((?P<n>\d+)\)",),
+        ),
+        Check(
+            "entra tests",
+            _collected("tests/entra"),
+            (r"`tests/entra/` \((?P<n>\d+)\)",),
+        ),
+    ]
 
 
 def _apply(text: str, checks: list[Check]) -> tuple[str, list[str], set[str]]:
@@ -195,7 +232,7 @@ def _apply(text: str, checks: list[Check]) -> tuple[str, list[str], set[str]]:
 
 
 def main() -> int:
-    checks = [*_checks(), _test_count_check()]
+    checks = [*_checks(), *_test_count_checks()]
     check_only = "--check" in sys.argv
 
     stale_total = 0

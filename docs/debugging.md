@@ -106,26 +106,33 @@ admin needs to exclude the app id.
 
 | Symptom | Cause |
 |---|---|
-| `401` with `Invalid audience` | The token is for Graph but the server expects its own audience, or the reverse. Check `GRAPH_MCP_DOES_OBO` |
-| `401` with `azp` rejection | The token was minted by a different app registration. In the interim posture only OBO tokens from this `client_id` are accepted |
+| `401` with `audience mismatch` | The caller requested a token for Graph, or for another API. It must request `api://<mcp-client-id>`. Reversed if you are running the deprecated passthrough posture — check `GRAPH_MCP_DOES_OBO` |
+| `401` carrying a `claims` parameter | **Not a failure.** Conditional Access wants step-up. The client must acquire a new token presenting those claims; retrying the cached one fails identically |
+| `401` with `azp` rejection | The token was minted by a client id not in `GRAPH_MCP_ALLOWED_AZP`. For an Entra Agent ID this is the *agent identity's* id, never the blueprint's |
 | `401`, `Missing Authorization header` | No token — or the request hit a path the middleware protects and you expected it public |
-| `403` from a tool | Not authentication. The token is valid; the *permission* is missing — see `SCOPE_DENIED` |
+| `403`, `missing required scope(s)` | The token's `scp` lacks `GRAPH_MCP_REQUIRED_SCOPE`. Check the scope is both exposed on the registration *and* consented |
+| `403`, `app-only tokens are not permitted` | A client-credentials token was presented. On-behalf-of works only for user principals — use the shared secret and the internal tier instead |
+| `403` from a tool | Not authentication. The token is valid; the Graph *permission* is missing — see `SCOPE_DENIED` |
+| `500`, `obo_failed` | A server-side fault: bad credential, or missing admin consent. Deliberately not a `401`, which would loop the client against something no token can fix |
+| Server refuses to start, naming credential options | Resource-server mode with no certificate, federated token file or secret. This is startup validation doing its job |
 | `421 Misdirected Request` | Not authentication either. The `Host` header is not trusted — set `GRAPH_MCP_RESOURCE_URL` |
-| `AADSTS65001` during OBO | The user has not consented to the downstream Graph scopes |
+| `AADSTS65001` during the exchange | Admin consent was never granted for the Graph permissions this server requests |
+| `AADSTS7000215` during the exchange | Invalid client secret on the registration |
 
 The two postures validate different things, and mixing them up produces a confusing `401`:
 
-- **Interim (default)** — the caller forwards an already-OBO'd Graph token. Validated for the Graph
-  audience plus `azp == our client_id`.
-- **Resource server** (`GRAPH_MCP_DOES_OBO=true`) — the inbound token is audienced to this MCP.
-  Audience binding is the gate, so the `azp` check is dropped and the server exchanges the token
-  itself.
+- **Resource server (default)** — the inbound token is audienced to this MCP. Audience binding is
+  the gate, and the server exchanges the token itself before any tool runs.
+- **Passthrough** (`GRAPH_MCP_DOES_OBO=false`, deprecated) — the caller forwards an already-exchanged
+  Graph token, validated for the Graph audience plus `azp == our client_id`.
+
+[agent-auth.md](agent-auth.md) has the full chain and the app-registration setup each posture needs.
 
 ### `missing_graph_token`
 
 Dispatch fails closed before any Graph call. The message names the fix for the transport in use:
 over stdio an env var (`GRAPH_MCP_CLIENT_ID` to sign in, or `GRAPH_MCP_ACCESS_TOKEN` to supply one
-directly), over HTTP the `X-Graph-Token` header.
+directly), over HTTP `Authorization: Bearer <token>`.
 
 Seeing it on HTTP when a token *was* sent usually means the shared-secret machine bypass was taken:
 a machine principal carries no Graph token by design, so any tool needing one fails closed here.

@@ -19,6 +19,7 @@ These are the reference pages behind it.
 | | |
 |---|---|
 | [graph-coverage.md](graph-coverage.md) | What this covers of the Graph v1.0 surface, workload by workload — what it does not, and what is out of scope. |
+| [glossary.md](glossary.md) | `aud`, `azp`, `scp`, OBO, FIC, agent identity blueprint — the Entra and OAuth terms these docs lean on, defined as they apply here. |
 | [roadmap.md](roadmap.md) | What is not done. Shipped work lives in the [changelog](../CHANGELOG.md). |
 | [adr/](adr/) | Architecture Decision Records — the choices that would otherwise be re-litigated. |
 

@@ -19,9 +19,9 @@ search, people, contacts, directory, tasks and OneNote, over **stdio** or **Stre
   stays small and the wire behaviour is inspectable.
 - **Read/write separation is enforced, not advisory** — write tools are hidden *and* refused unless
   the caller explicitly opts in.
-- **Auth-agnostic by default** — tools receive an already-acquired Graph token via the request
-  context. The server can also perform its own on-behalf-of exchange when you want it to act as a
-  proper OAuth resource server.
+- **A real OAuth resource server** — hosted, it accepts only tokens issued *for it*, then performs
+  the on-behalf-of exchange itself. An agent acting for a signed-in user never handles a Graph
+  token. Locally over stdio it just signs you in.
 
 > **Status: early.** Extracted from a production agent platform where it has been running against a
 > real tenant. The code is battle-tested; the packaging and public API surface are newer. Expect the
@@ -348,6 +348,7 @@ know what needs confirming, and every description names the delegated permission
 | [docs/troubleshooting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/troubleshooting.md) | Entra errors, Conditional Access, corporate TLS proxies |
 | [docs/debugging.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/debugging.md) | Logs, error codes, and the auth failures people actually hit |
 | [docs/graph-coverage.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/graph-coverage.md) | What this covers of the Graph v1.0 surface, what it does not, and what is out of scope |
+| [docs/glossary.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/glossary.md) | `aud`, `azp`, `scp`, OBO, FIC — the Entra and OAuth vocabulary, defined as it applies here |
 | [docs/roadmap.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/roadmap.md) | What is not done yet |
 | [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md) | Running the suite, how it is arranged, and MCP Inspector |
 | [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md) | Dev setup, the add-a-tool checklist, and the invariants enforced by tests |

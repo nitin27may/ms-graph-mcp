@@ -145,7 +145,14 @@ the package version reaches a `remove_in`**, comparing on the release tuple so e
 cycle — `0.4.0rc1` — already counts as due. Removal then becomes a deliberate edit rather than
 something dependent on memory, and pushing a date back is allowed as long as somebody decides to.
 
-Currently registered: the 51 pre-namespace tool aliases, removal due in `0.4.0`.
+There are **3 registered deprecations**. Read
+[`deprecations.py`](src/ms_graph_mcp/deprecations.py) for the current list rather than a copy of it
+here — each entry carries its own reasoning, and a restatement in prose is one more thing to forget.
+The two that will affect a deployment rather than a caller:
+
+- The token-passthrough posture (`GRAPH_MCP_DOES_OBO=false`), removal in `1.0.0`.
+- `GRAPH_MCP_REQUIRED_SCOPE` / `GRAPH_MCP_WRITE_SCOPE_NAME` defaulting to empty, changing in
+  `0.5.0`.
 
 ## Releasing
 
