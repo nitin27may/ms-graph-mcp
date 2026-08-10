@@ -20,7 +20,7 @@ classifiers = [
 dependencies = [
     # Floors are set by mcp 2.0's own requirements, not by what this package uses.
     "pydantic>=2.12.0,<3.0",
-    "pydantic-settings>=2.7.0",
+    "pydantic-settings>=2.15.0",
     # The Graph client's HTTP stack. NOTE: mcp 2.0 runs on `httpx2`, a *separate*
     # distribution, so both are present in the environment. Consolidating client.py
     # onto httpx2 is tracked separately — an HTTP-stack swap and an SDK migration
