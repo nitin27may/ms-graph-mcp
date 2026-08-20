@@ -61,6 +61,9 @@ pip install ms-graph-mcp==0.3.0rc1      # a specific one; no --pre needed for an
 A container image is on GHCR for the HTTP transport — see
 [docs/hosting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/hosting.md#docker).
 
+Also listed on the [official MCP registry](https://modelcontextprotocol.io/registry) as
+`io.github.nitin27may/ms-graph-mcp`.
+
 > **TestPyPI is not a distribution channel.** Every release is published there first, but that is a
 > rehearsal of the publishing process: it can be wiped without notice and does not mirror PyPI, so
 > installing from it needs `--extra-index-url https://pypi.org/simple/` just to resolve ordinary
