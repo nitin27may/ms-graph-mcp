@@ -407,7 +407,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: docker/setup-qemu-action@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # GITHUB_TOKEN is scoped to this repository and expires with the job, so
       # GHCR needs no stored credential of its own.
