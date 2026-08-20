@@ -3,11 +3,14 @@
 <!-- mcp-name: io.github.nitin27may/ms-graph-mcp -->
 
 [![PyPI](https://img.shields.io/pypi/v/ms-graph-mcp)](https://pypi.org/project/ms-graph-mcp/)
+[![Release](https://img.shields.io/github/v/release/nitin27may/ms-graph-mcp)](https://github.com/nitin27may/ms-graph-mcp/releases/latest)
 [![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
 [![Container](https://img.shields.io/badge/ghcr.io-ms--graph--mcp-blue)](https://github.com/nitin27may/ms-graph-mcp/pkgs/container/ms-graph-mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/nitin27may/ms-graph-mcp/blob/main/LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
+
+[Releases](https://github.com/nitin27may/ms-graph-mcp/releases) · [Changelog](CHANGELOG.md)
 
 A [Model Context Protocol](https://modelcontextprotocol.io) server for **Microsoft Graph** — 85
 tools across mail, calendar, meetings (including transcripts), Teams chat, files, SharePoint,
