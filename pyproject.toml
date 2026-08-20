@@ -1,6 +1,6 @@
 [project]
 name = "ms-graph-mcp"
-version = "0.3.0rc1"
+version = "0.3.0"
 description = "Microsoft Graph MCP server — 85 tools across mail, calendar, meetings, Teams chat, files, search, people, directory, tasks and OneNote, over stdio or Streamable HTTP."
 requires-python = ">=3.12"
 readme = "README.md"
