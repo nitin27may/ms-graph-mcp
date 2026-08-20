@@ -441,7 +441,7 @@ jobs:
 
       # Lets a consumer verify the image was built by this workflow from this
       # commit, rather than pushed by hand to the same name.
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository }}
           subject-digest: ${{ steps.push.outputs.digest }}
