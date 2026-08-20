@@ -378,6 +378,29 @@ jobs:
           PRERELEASE=""
           if [[ "$GITHUB_REF_NAME" == *-rc* ]]; then PRERELEASE="--prerelease"; fi
 
+          # Stable releases get their notes from CHANGELOG.md — the curated,
+          # Keep-a-Changelog section for this version — rather than
+          # --generate-notes, which is just the merged-PR title list. On this
+          # repo that list is mostly Dependabot noise; the two or three real
+          # changes get buried in it. Prereleases have no changelog section
+          # (see CONTRIBUTING.md's "Preparing the version": a candidate is a
+          # rehearsal, so cutting one would strand entries under a version
+          # nobody installs) so they keep --generate-notes.
+          NOTES_FLAG="--generate-notes"
+          if [[ -z "$PRERELEASE" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            awk -v heading="## [$VERSION]" '
+              index($0, heading) == 1 { found=1; next }
+              found && index($0, "## [") == 1 { exit }
+              found { print }
+            ' CHANGELOG.md > /tmp/release-notes.md
+            if [[ -s /tmp/release-notes.md ]]; then
+              printf '\n**Full changelog:** https://github.com/%s/blob/main/CHANGELOG.md\n' \
+                "$GITHUB_REPOSITORY" >> /tmp/release-notes.md
+              NOTES_FLAG="--notes-file /tmp/release-notes.md"
+            fi
+          fi
+
           # Idempotent, because re-running a release is a normal thing to do —
           # a later job failing, or a gate that only opens once something else
           # has shipped. `gh release create` errors on an existing tag, which
@@ -389,7 +412,7 @@ jobs:
             # shellcheck disable=SC2086
             gh release create "$GITHUB_REF_NAME" dist/* \
               --title "$GITHUB_REF_NAME" \
-              --generate-notes \
+              $NOTES_FLAG \
               $PRERELEASE
           fi
 
