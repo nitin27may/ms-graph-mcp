@@ -1,5 +1,7 @@
 # ms-graph-mcp
 
+<!-- mcp-name: io.github.nitin27may/ms-graph-mcp -->
+
 [![PyPI](https://img.shields.io/pypi/v/ms-graph-mcp)](https://pypi.org/project/ms-graph-mcp/)
 [![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
