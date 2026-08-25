@@ -1,0 +1,133 @@
+site_name: ms-graph-mcp
+site_url: https://nitinksingh.com/ms-graph-mcp/
+site_description: >-
+  Microsoft Graph MCP server for AI agents — 85 tools across Outlook mail and calendar,
+  Teams, OneDrive, SharePoint, OneNote, Planner and Entra ID. Delegated OAuth over
+  stdio or Streamable HTTP, with read/write separation enforced rather than advisory.
+site_author: Nitin Singh
+
+repo_url: https://github.com/nitin27may/ms-graph-mcp
+repo_name: nitin27may/ms-graph-mcp
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+
+# docs/README.md exists so that browsing the folder on GitHub still renders an index.
+# The site's landing page is index.md; keeping both in the build would collide.
+exclude_docs: |
+  README.md
+
+theme:
+  name: material
+  custom_dir: overrides
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - navigation.tracking
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.action.edit
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  icon:
+    logo: material/graph-outline
+    repo: fontawesome/brands/github
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  # GitHub-compatible slugs: the docs are read on GitHub too, and GitHub renders an
+  # em-dash heading as "a--b" where MkDocs' default slugify gives "a-b". Without this,
+  # every cross-link written against the GitHub rendering silently 404s on the site.
+  - toc:
+      permalink: true
+      toc_depth: 3
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra:
+  # Drop the "Made with Material for MkDocs" footer line. Material's documented
+  # opt-out; keeps the prev/next page navigation, which replacing the footer
+  # partial outright would remove.
+  generator: false
+  analytics:
+    provider: google
+    # Same property as the sibling doc sites: the family is measured as one
+    # property and segmented by path, not split across four properties.
+    property: G-5Z8HS51RCP
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nitin27may/ms-graph-mcp
+      name: Source on GitHub
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/ms-graph-mcp/
+      name: ms-graph-mcp on PyPI
+
+nav:
+  - Home: index.md
+  - Setup:
+      - Configuration: configuration.md
+      - Delegated permissions: permissions.md
+  - Running it:
+      - Hosting: hosting.md
+      - Troubleshooting: troubleshooting.md
+      - Debugging: debugging.md
+  - Reference:
+      - Graph coverage: graph-coverage.md
+      - Roadmap: roadmap.md
+  - Contributing:
+      - Testing: testing.md
+  - Design decisions:
+      - Overview: adr/index.md
+      - ADR 0001 — src layout: adr/0001-src-layout.md
+      - ADR 0002 — raw httpx client: adr/0002-raw-httpx-graph-client.md
+      - ADR 0003 — in-server token validation: adr/0003-no-gateway-trust-mode.md
+# Copyright footer text
+#
+# Identical on all doc sites by design, so the family reads as one property
+# -- keep it byte-identical when editing.
+copyright: '&copy; 2026 <a href="https://nitinksingh.com/">Nitin Singh</a> &middot; MIT License &middot; <a href="https://github.com/nitin27may" title="GitHub profile" aria-label="GitHub profile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true" style="vertical-align:text-bottom"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.012 8.012 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>'

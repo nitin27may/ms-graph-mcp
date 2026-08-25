@@ -4,6 +4,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/ms-graph-mcp)](https://pypi.org/project/ms-graph-mcp/)
 [![Release](https://img.shields.io/github/v/release/nitin27may/ms-graph-mcp)](https://github.com/nitin27may/ms-graph-mcp/releases/latest)
+[![Docs](https://img.shields.io/badge/docs-nitinksingh.com-0f766e)](https://nitinksingh.com/ms-graph-mcp/)
 [![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
 [![Container](https://img.shields.io/badge/ghcr.io-ms--graph--mcp-blue)](https://github.com/nitin27may/ms-graph-mcp/pkgs/container/ms-graph-mcp)
@@ -346,9 +347,11 @@ know what needs confirming, and every description names the delegated permission
 
 ## Documentation
 
+Published as a searchable site at **<https://nitinksingh.com/ms-graph-mcp/>**.
+
 | | |
 |---|---|
-| [docs/](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/README.md) | Index of everything below |
+| [Documentation site](https://nitinksingh.com/ms-graph-mcp/) | Everything below, searchable and cross-linked |
 | [docs/configuration.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/configuration.md) | Every environment variable, split by deployment shape |
 | [docs/permissions.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets |
 | [docs/hosting.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/hosting.md) | Streamable HTTP, headers, Docker and GHCR |

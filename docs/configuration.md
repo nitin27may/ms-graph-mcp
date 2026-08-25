@@ -1,7 +1,7 @@
 # Configuration
 
 Every setting is read from the environment. A `.env` file in the working directory is picked up if
-present; [`.env.example`](../.env.example) is a commented copy of everything below.
+present; [`.env.example`](https://github.com/nitin27may/ms-graph-mcp/blob/main/.env.example) is a commented copy of everything below.
 
 The three app-registration fields also accept the conventional `AZURE_AD_*` names, so an existing
 Azure environment drives the server without renaming anything:
@@ -124,7 +124,7 @@ the thread already fixes who they go to. The check runs before the Graph call, n
 **`GRAPH_MCP_DISABLE_SSL_VERIFY` is a corporate-proxy escape hatch, not a posture.** See
 [troubleshooting.md](troubleshooting.md#ssl-certificate-verify-failures-behind-corporate-proxies).
 
-See [SECURITY.md](../SECURITY.md) for what to change before exposing this beyond localhost.
+See [SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) for what to change before exposing this beyond localhost.
 
 ---
 
@@ -132,7 +132,7 @@ See [SECURITY.md](../SECURITY.md) for what to change before exposing this beyond
 
 85 tools is a lot to put in front of a model. `GRAPH_MCP_TOOLSETS` selects named profiles, each a
 group of namespaces. The table and the per-request `X-Toolsets` header are documented in the
-[README](../README.md#toolset-profiles).
+[README](https://github.com/nitin27may/ms-graph-mcp/blob/main/README.md#toolset-profiles).
 
 Two properties worth restating here:
 

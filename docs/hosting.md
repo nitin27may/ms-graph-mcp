@@ -114,7 +114,7 @@ replacing it — replacing it means the transport never starts.
 
 ## Before you expose it
 
-[SECURITY.md](../SECURITY.md) is the checklist. The short version:
+[SECURITY.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/SECURITY.md) is the checklist. The short version:
 
 - `GRAPH_MCP_JWT_VERIFY` stays on. It defaults on for a reason.
 - Set `GRAPH_MCP_RESOURCE_URL`, or nothing reaches a handler.

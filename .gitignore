@@ -44,3 +44,7 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Docs site build (mkdocs)
+.venv-docs/
+site/

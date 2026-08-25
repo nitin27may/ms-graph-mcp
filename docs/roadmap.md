@@ -1,11 +1,11 @@
 # Roadmap
 
-What is **not** done. Shipped work lives in [CHANGELOG.md](../CHANGELOG.md) — a list of ticked boxes
+What is **not** done. Shipped work lives in [CHANGELOG.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CHANGELOG.md) — a list of ticked boxes
 is history, not a plan, so items are deleted from here when they land rather than crossed out.
 
 Nothing here has a date. This is a side project with a public tenant behind it; ordering is a
 statement of intent, not a commitment. Issues and pull requests against any of it are welcome —
-start with [CONTRIBUTING.md](../CONTRIBUTING.md).
+start with [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md).
 
 ## Graph coverage
 
@@ -24,7 +24,7 @@ detail and the reasoning. Ranked by value per unit of work.
 | 8 | **Excel workbook**, **change notifications / delta**, **`$batch`** | — | Larger and cross-cutting. `$batch` is a pure efficiency win; delta is the prerequisite for any sync feature, and the only sanctioned way to track Teams messages. |
 
 Adding all of 1–7 takes the surface past 100 tools, which is what makes the
-[toolset profiles](../README.md#toolset-profiles) load-bearing rather than a nicety.
+[toolset profiles](https://github.com/nitin27may/ms-graph-mcp/blob/main/README.md#toolset-profiles) load-bearing rather than a nicety.
 
 ## Platform
 
@@ -49,7 +49,7 @@ before it is frozen under [semver](https://semver.org/spec/v2.0.0.html):
   from the platform this was built for. Whether they stay in this package or move out is an open
   question.
 - **Removing the pre-namespace aliases.** 51 of them, due in `0.4.0`. See the deprecation policy in
-  [CONTRIBUTING.md](../CONTRIBUTING.md#deprecation-policy).
+  [CONTRIBUTING.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/CONTRIBUTING.md#deprecation-policy).
 
 ## Not planned
 

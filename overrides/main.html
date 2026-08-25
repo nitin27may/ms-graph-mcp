@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {{ super() }}
+  {#
+    Social and structured-data tags.
+
+    Emitted from the template rather than via Material's `social` plugin, which needs
+    cairosvg and its system libraries -- a build dependency, and a way for the build to
+    start failing for reasons unrelated to content. These tags are the part that actually
+    matters for how a link renders when shared; the plugin's extra value is a per-page
+    preview image. One static card in docs/assets covers that without the dependency.
+    Site-level rather than per-page is the trade being made: a generic card that renders
+    beats a per-page card that breaks the build.
+
+    Kept byte-compatible with the other doc sites so the family reads as one property.
+  #}
+  {#- `page` is undefined on some generated pages, so guard every access -#}
+  {#- The homepage's nav title is "Home", which would make a shared link render a card
+      titled "Home" and put that in the JSON-LD headline. Use the site name there. -#}
+  {%- if page and page.is_homepage -%}{%- set page_title = config.site_name -%}
+  {%- elif page and page.title -%}{%- set page_title = page.title -%}
+  {%- else -%}{%- set page_title = config.site_name -%}{%- endif -%}
+  {%- if page and page.meta and page.meta.description -%}
+    {%- set page_desc = page.meta.description -%}
+  {%- else -%}{%- set page_desc = config.site_description -%}{%- endif -%}
+  {%- if page and page.canonical_url -%}{%- set page_url = page.canonical_url -%}
+  {%- else -%}{%- set page_url = config.site_url -%}{%- endif -%}
+
+  <meta name="robots" content="index, follow">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="{{ config.site_name }}">
+  <meta property="og:title" content="{{ page_title }}">
+  <meta property="og:description" content="{{ page_desc }}">
+  <meta property="og:url" content="{{ page_url }}">
+  <meta property="og:locale" content="en_GB">
+  {#- Absolute, as og:image requires. config.site_url already carries the project
+      path, so this must not repeat it. -#}
+  {%- set social_image = config.site_url | trim('/') ~ '/assets/social-card.png' -%}
+  <meta property="og:image" content="{{ social_image }}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="{{ config.site_name }} — {{ config.site_description }}">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="{{ social_image }}">
+  <meta name="twitter:title" content="{{ page_title }}">
+  <meta name="twitter:description" content="{{ page_desc }}">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "TechArticle",
+    "headline": {{ page_title | tojson }},
+    "description": {{ page_desc | tojson }},
+    "url": {{ page_url | tojson }},
+    "inLanguage": "en",
+    "isPartOf": {
+      "@type": "WebSite",
+      "name": {{ config.site_name | tojson }},
+      "url": {{ config.site_url | tojson }}
+    },
+    "author": { "@type": "Person", "name": "Nitin Singh", "url": "https://nitinksingh.com/" },
+    "publisher": { "@type": "Person", "name": "Nitin Singh" }
+  }
+  </script>
+{% endblock %}
