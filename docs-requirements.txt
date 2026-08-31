@@ -5,6 +5,6 @@
 #   uv pip install --python .venv-docs/bin/python -r docs-requirements.txt
 #   .venv-docs/bin/mkdocs serve
 mkdocs>=1.6
-mkdocs-material>=9.5
+mkdocs-material>=9.7.7
 mkdocs-minify-plugin>=0.8
 pymdown-extensions>=10
