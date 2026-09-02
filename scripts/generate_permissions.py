@@ -97,7 +97,7 @@ descriptions, so it cannot drift from the code.
 This server only ever uses **delegated** permissions — it acts as the signed-in user and can never
 see more than they can. There are no application permissions anywhere in the tool surface.
 
-See the [README](../README.md#set-up-the-entra-app) for the app-registration walkthrough, and
+See the [README](https://github.com/nitin27may/ms-graph-mcp/blob/main/README.md#set-up-the-entra-app) for the app-registration walkthrough, and
 [configuration.md](configuration.md) for the settings. This document is the reference for *which*
 permissions to grant.
 
