@@ -3,9 +3,10 @@
 Guidance for Claude Code working in this repository.
 
 `ms-graph-mcp` is a Model Context Protocol server for Microsoft Graph — 85 tools across calendar,
-email, meetings, Teams chat, files, people, directory, tasks and OneNote, served over stdio or
-Streamable HTTP. Tool names are namespaced by Graph permission family (`mail_`, `files_`,
-`calendar_`, `meetings_`, `chat_`, `directory_`, `people_`, `tasks_`, `notes_`). The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
+email, meetings, Teams chat, files, people, contacts, directory, tasks, OneNote and
+search, served over stdio or Streamable HTTP. Tool names are namespaced by Graph permission family (`mail_`, `files_`,
+`calendar_`, `meetings_`, `chat_`, `directory_`, `people_`, `tasks_`, `notes_`, `search_`).
+The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
 deliberately **not** dependencies (see the note at the bottom of the `dependencies` block in
 `pyproject.toml`, and [ADR 0002](docs/adr/0002-raw-httpx-graph-client.md)).
 
@@ -58,7 +59,7 @@ flowchart TD
     SRV["server.py<br/>list_graph_tools / dispatch_graph_tool<br/>tier gating + OBO exchange"]
     ALLOW["allowlists.py<br/>READ / WRITE / INTERNAL tuples"]
     REG["tooling.py · ToolRegistry<br/>@tool + Pydantic arg validation"]
-    DOM["domain modules<br/>calendar · email · meetings · teams · files<br/>files_write · people · directory · tasks · onenote · internal"]
+    DOM["domain modules<br/>calendar · calendar_write · email · meetings · teams · chats<br/>files · files_write · people · contacts · directory<br/>tasks · tasks_write · onenote · search · internal"]
     CLIENT["client.py<br/>graph_get / _get_text / _post / _patch<br/>_delete / _probe_status / _get_url"]
     GRAPH["Microsoft Graph v1.0"]
 
@@ -86,11 +87,11 @@ Five steps. Skipping 3, 4 or 5 breaks the server or the suite.
 
 1. In the domain module, define a Pydantic input model and an **async** function decorated with
    `@tool(description=...)`. A sync function raises `TypeError` at decoration time
-   (`src/ms_graph_mcp/tooling.py:102`) rather than failing later inside the call loop.
+   (`tooling.py`, `_tool_decorator`) rather than failing later inside the call loop.
 2. Read the token from `context["access_token"]`. Directory *group* lookups are the exception —
    they prefer `context.get("entra_app_token")` with a fallback, because delegated permissions
-   can't cover tenant-wide group reads. `tests/test_directory.py:32` asserts this by source
-   inspection.
+   can't cover tenant-wide group reads. `tests/test_directory.py`
+   (`test_group_tools_use_entra_app_token`) asserts this by source inspection.
 3. Add the tool name to exactly one tuple in `src/ms_graph_mcp/allowlists.py`. A registered tool
    absent from every allowlist is unreachable; an allowlist name with no registered tool raises
    `RuntimeError` out of `resolve_read_tools()` on the next `tools/list`. The server refuses to
@@ -145,14 +146,16 @@ These are tests, not preferences. An 85-tool surface only stays coherent if drif
 
 Security invariants — do not relax these to make something work:
 
-- `assert_no_write_in_reads()` (`allowlists.py:125`) fails loudly if a write or internal name leaks
+- `assert_no_write_in_reads()` (`allowlists.py`) fails loudly if a write or internal name leaks
   into the read allowlist, or if any allowlist has duplicates.
 - The internal tier gates on `principal.is_machine`, never `is_app_only`. A real Entra
   client-credentials token also sets `is_app_only`; only the shared-secret bypass sets `is_machine`
-  (`entra/middleware.py:44`). This was an audited finding — see the S2 comment at `auth.py:70-78`,
-  with defense in depth at `entra/middleware.py:118`.
+  (`entra/middleware.py`, `_machine_principal`). This was an audited finding — see the S2
+  comment in `auth.py` (`_resolve_scopes`), with defense in depth at the `allow_app_only`
+  gate in `entra/middleware.py`.
 - Dispatch fails closed. Unknown name, missing scope, and missing Graph token each return a
-  structured `{"error": ..., "message": ...}` before any Graph call (`server.py:122-189`).
+  structured `{"error": ..., "message": ...}` before any Graph call (`server.py`,
+  `dispatch_graph_tool`).
 - `mail_send` / `mail_forward` check `GRAPH_MCP_SEND_EMAIL_ALLOWED_DOMAINS` before the Graph call,
   not after (`email.py:319`, `email.py:664`). Those two are gated because the caller picks the
   recipients; `mail_reply` / `mail_reply_all` are not, because the thread already fixes them.
@@ -164,13 +167,13 @@ Security invariants — do not relax these to make something work:
 
 ## Auth postures
 
-Selected by `GRAPH_MCP_DOES_OBO` in `config.py:125-153`:
+Selected by `GRAPH_MCP_DOES_OBO` (`config.py`, `mcp_does_obo`):
 
 - **Interim (default)** — the caller forwards an already-OBO'd Graph token. Validated for the Graph
   audience plus `azp == our client_id`, so only OBO tokens minted by this registration are accepted.
 - **Resource server** (`mcp_does_obo=true`) — the inbound token is audienced to this MCP. Audience
-  binding is the gate, so the azp check is dropped, and `server.py:197` exchanges the token via
-  `obo.py` (MSAL) before the tool runs.
+  binding is the gate, so the azp check is dropped, and `dispatch_graph_tool` exchanges the
+  token via `obo.py` (`acquire_token_on_behalf_of`, MSAL) before the tool runs.
 
 `src/ms_graph_mcp/entra/` is a vendored, self-contained auth toolkit running in
 `AuthMode.DOWNSTREAM_SERVICE`. It has its own `tests/entra/conftest.py` with a real generated RS256
