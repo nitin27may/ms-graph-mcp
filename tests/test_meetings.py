@@ -190,7 +190,7 @@ class TestGetMeetingsWithTranscripts:
                 return transcript_resp
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -233,7 +233,7 @@ class TestGetMeetingsWithTranscripts:
                 return transcript_resp
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -275,7 +275,7 @@ class TestGetMeetingsWithTranscripts:
                 return om_403
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -314,7 +314,7 @@ class TestGetMeetingsWithTranscripts:
                 return transcript_resp
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -339,7 +339,7 @@ class TestGetMeetingsWithTranscripts:
         async def fake_get(url, **kwargs):
             return _make_response(500, {"error": {"code": "ServiceError"}})
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -385,7 +385,7 @@ class TestGetTranscriptByEventId:
                 return transcript_list_resp
             raise ValueError(f"Unexpected URL in fast-path test: {url_str}")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -439,7 +439,7 @@ class TestGetTranscriptByEventId:
                     return _make_response(200, transcript_list_data)
                 raise ValueError(f"Unexpected URL: {url_str}")
 
-            with patch("httpx.AsyncClient") as mock_client_cls:
+            with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_client.get = fake_get
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -474,7 +474,7 @@ class TestGetTranscriptByEventId:
             async def fake_get(url, **kwargs):
                 return _make_response(403, {"error": {"code": "Forbidden"}})
 
-            with patch("httpx.AsyncClient") as mock_client_cls:
+            with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_client.get = fake_get
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -513,7 +513,7 @@ class TestGetTranscriptByEventId:
         async def fake_get(url, **kwargs):
             return _make_response(200, {"value": []})  # no transcripts
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

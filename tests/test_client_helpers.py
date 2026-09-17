@@ -44,7 +44,10 @@ def _resp(*, status: int = 200, payload: dict | None = None, headers: dict | Non
 async def test_graph_probe_status_returns_status_code():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=_resp(status=404))) as cls:
+        with patch(
+            "ms_graph_mcp.client.httpx.AsyncClient",
+            return_value=_mock_client(get=_resp(status=404)),
+        ) as cls:
             status = await graph_probe_status("tok", "/users/u@x/messages/m1?$select=id")
     assert status == 404
     # Probe GET does NOT raise on non-200 (status is classified by the caller).
@@ -56,7 +59,7 @@ async def test_graph_probe_status_none_on_transport_error():
         cfg.return_value.disable_ssl_verify = False
         client = _mock_client()
         client.get = AsyncMock(side_effect=httpx.ConnectError("boom"))
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             assert await graph_probe_status("tok", "/users/u@x/events/e1") is None
 
 
@@ -67,7 +70,9 @@ async def test_graph_get_url_returns_json():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         resp = _resp(payload={"value": [1, 2], "@odata.nextLink": None})
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)) as cls:
+        with patch(
+            "ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(get=resp)
+        ) as cls:
             out = await graph_get_url("tok", _GET)
     assert out == {"value": [1, 2], "@odata.nextLink": None}
     assert cls.return_value.get.call_args.args[0] == _GET
@@ -88,7 +93,7 @@ async def test_graph_get_url_retries_once_on_429(monkeypatch):
     client.get = AsyncMock(side_effect=[throttled, ok])
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             out = await graph_get_url("tok", _GET)
     assert out == {"value": ["page2"]}
     assert client.get.await_count == 2
@@ -107,7 +112,7 @@ async def test_graph_get_url_retries_once_on_429(monkeypatch):
 async def test_graph_get_url_rejects_non_graph_host():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient") as cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as cls:
             try:
                 await graph_get_url("tok", "https://evil.example.com/steal?token=x")
                 raised = False
@@ -123,7 +128,7 @@ async def test_graph_get_url_rejects_graph_lookalike_host():
     query, or subdomain trick) must not pass a naive substring check."""
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient") as cls:
+        with patch("ms_graph_mcp.client.httpx.AsyncClient") as cls:
             for bad_url in (
                 "https://evil.example.com/?u=https://graph.microsoft.com/v1.0",
                 "https://graph.microsoft.com.evil.example.com/v1.0/me",
@@ -144,7 +149,7 @@ async def test_graph_get_url_accepts_real_graph_url():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         resp = _resp(payload={"value": []})
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(get=resp)):
             out = await graph_get_url("tok", _GET)
     assert out == {"value": []}
 
@@ -156,7 +161,10 @@ async def test_create_onenote_page_posts_html_and_returns_raw():
     raw = {"id": "p1", "title": "T", "links": {"oneNoteWebUrl": {"href": "https://x"}}}
     with patch("ms_graph_mcp.config.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(post=_resp(payload=raw))) as cls:
+        with patch(
+            "ms_graph_mcp.client.httpx.AsyncClient",
+            return_value=_mock_client(post=_resp(payload=raw)),
+        ) as cls:
             out = await create_onenote_page(
                 "tok", section_id="sec-9", page_title="Title", content_html="<p>body</p>"
             )
@@ -181,7 +189,7 @@ async def test_graph_post_no_content_succeeds_on_empty_202():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         client = _mock_client(post=resp)
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             result = await graph_post_no_content("tok", "/me/sendMail", {"message": {}})
 
     assert result is None
@@ -197,7 +205,7 @@ async def test_graph_post_no_content_sends_auth_and_extra_headers():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         client = _mock_client(post=resp)
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             await graph_post_no_content(
                 "tok", "/me/events/e1/cancel", {"comment": "x"}, {"If-Match": 'W/"1"'}
             )
@@ -215,7 +223,7 @@ async def test_graph_post_no_content_raises_on_error_status():
     )
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(post=resp)):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(post=resp)):
             with patch("ms_graph_mcp.client._log_error") as log_error:
                 try:
                     await graph_post_no_content("tok", "/me/sendMail", {})
@@ -235,7 +243,7 @@ async def test_graph_post_no_content_defaults_body_to_empty_object():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         client = _mock_client(post=resp)
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             await graph_post_no_content("tok", "/me/events/e1/accept")
 
     assert client.post.call_args.kwargs["json"] == {}
@@ -255,7 +263,7 @@ async def test_graph_try_get_returns_parsed_json_on_success():
     resp.text = ""
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(get=resp)):
             result = await graph_try_get("tok", "/me/onlineMeetings", **{"$top": 5})
 
     assert result.ok is True
@@ -270,7 +278,7 @@ async def test_graph_try_get_does_not_raise_on_403():
     resp.text = "forbidden"
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(get=resp)):
             result = await graph_try_get("tok", "/me/onlineMeetings")
 
     assert result.status_code == 403
@@ -285,7 +293,7 @@ async def test_graph_try_get_json_is_empty_dict_on_failure():
     resp.text = ""
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(get=resp)):
             result = await graph_try_get("tok", "/me/x")
 
     assert result.json() == {}
@@ -299,7 +307,7 @@ async def test_graph_try_get_returns_text_for_non_json_accept():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         client = _mock_client(get=resp)
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             result = await graph_try_get(
                 "tok", "/me/onlineMeetings/m1/transcripts/t1/content", accept="*/*"
             )
@@ -318,7 +326,7 @@ async def test_graph_try_get_survives_a_success_with_an_unparseable_body():
     resp.json.side_effect = ValueError("no")
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
-        with patch("httpx.AsyncClient", return_value=_mock_client(get=resp)):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=_mock_client(get=resp)):
             result = await graph_try_get("tok", "/me/x")
 
     assert result.ok is True
@@ -333,7 +341,7 @@ async def test_graph_try_get_encodes_odata_params_literally():
     with patch("ms_graph_mcp.client.get_config") as cfg:
         cfg.return_value.disable_ssl_verify = False
         client = _mock_client(get=resp)
-        with patch("httpx.AsyncClient", return_value=client):
+        with patch("ms_graph_mcp.client.httpx.AsyncClient", return_value=client):
             await graph_try_get("tok", "/me/onlineMeetings", **{"$filter": "JoinWebUrl eq 'x'"})
 
     url = client.get.call_args.args[0]
