@@ -13,11 +13,24 @@ The validated principal + the MCP-specific headers (``X-Write-Scope`` and the
 optional ``X-Entra-App-Token``) are assembled into ``current_request_context``,
 the dict the MCP dispatch handlers read. The previous bespoke shared-secret /
 ``X-Graph-Token`` logic is gone — token verification now lives in the package.
+
+**The resource-server OBO exchange happens here**, not in ``dispatch_graph_tool``.
+Two reasons, both structural. A Conditional Access step-up arrives as a claims
+challenge, and it can only reach the client as a ``401`` with a
+``WWW-Authenticate`` header — a tool result is always an HTTP 200, so a challenge
+placed there is sealed inside a body no client acts on and the step-up can never
+complete. And dispatch is shared with stdio, where the inbound token is *already*
+a Graph token and exchanging it breaks every call; keeping the exchange in HTTP
+middleware means stdio has no code path to it at all, however the server is
+configured (``tests/test_stdio_unaffected.py``).
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
+from typing import TYPE_CHECKING
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -28,6 +41,9 @@ from ms_graph_mcp.entra import AuthConfig, AuthMode
 from ms_graph_mcp.entra.context import current_access_token
 from ms_graph_mcp.entra.errors import AuthError
 from ms_graph_mcp.entra.middleware import authenticate_request
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle at runtime, types only
+    from ms_graph_mcp.obo import OboError
 
 logger = logging.getLogger(__name__)
 
@@ -40,22 +56,93 @@ _PUBLIC_PATHS = frozenset({"/health"})
 _PUBLIC_PATH_PREFIXES = ("/.well-known/",)
 
 
-def _www_authenticate() -> str:
+def _www_authenticate(*, error: str = "", claims: str = "") -> str:
     """The Bearer challenge, pointing at the metadata document.
 
-    Empty when no public URL is configured — a pointer to a document that is
-    not served would be worse than none.
+    ``error`` and ``claims`` carry an OAuth error code and a Conditional Access
+    claims challenge. The claims value is base64-encoded because it is raw JSON
+    from Entra and a bare ``{"access_token":{...}}`` in a header value would not
+    survive parsing.
+
+    Without a configured public URL there is no metadata pointer — but a
+    challenge that names an error or carries claims is still worth sending, so
+    only the plain discovery form degrades to empty.
     """
     from ms_graph_mcp.config import get_config
 
     cfg = get_config()
     metadata_url = cfg.resource_metadata_url
-    if not metadata_url:
+    if not metadata_url and not error and not claims:
+        # Plain discovery challenge with nothing to point at. A pointer to a
+        # document that is not served would be worse than no header.
         return ""
-    parts = [f'Bearer resource_metadata="{metadata_url}"']
+    parts: list[str] = []
+    if error:
+        parts.append(f'error="{error}"')
+    if claims:
+        encoded = base64.b64encode(claims.encode()).decode()
+        parts.append(f'claims="{encoded}"')
+    if metadata_url:
+        parts.append(f'resource_metadata="{metadata_url}"')
     if cfg.scopes_list:
         parts.append(f'scope="{" ".join(cfg.scopes_list)}"')
-    return ", ".join(parts)
+    if not parts:
+        return ""
+    return "Bearer " + ", ".join(parts)
+
+
+async def _jsonrpc_method(request: Request) -> str:
+    """The JSON-RPC method of an MCP request, or ``""`` if there isn't one.
+
+    The middleware has to know whether a request is a ``tools/call`` before it
+    can decide anything token-related: exchanging a token for ``initialize`` or
+    ``tools/list`` would add a round-trip to every handshake and let a failure
+    that only matters to Graph refuse a listing that has nothing to do with it.
+
+    Reading the body here is safe — Starlette's ``BaseHTTPMiddleware`` caches it
+    and replays it downstream, so the transport still sees the full request.
+    Protocol revision 2026-07-28 removed JSON-RPC batching, so one request
+    object is the whole surface. Anything unparseable is reported as not a tool
+    call and left for the transport to reject properly.
+    """
+    if request.method != "POST":
+        return ""
+    try:
+        payload = json.loads(await request.body())
+    except (ValueError, UnicodeDecodeError):
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    method = payload.get("method")
+    return method if isinstance(method, str) else ""
+
+
+def _obo_error_response(exc: OboError) -> JSONResponse:
+    """Turn a failed OBO exchange into a response the client can act on.
+
+    Two outcomes, because they need different things from the caller:
+
+    - **The user can fix it by signing in again** — Conditional Access wants MFA
+      or a fresher sign-in. Answer ``401`` with the claims challenge, which is
+      what Microsoft's guidance prescribes for a middle tier and what makes the
+      client acquire a new token and retry.
+    - **Nothing the caller does will help** — a rejected assertion, a
+      misconfigured credential. Answer ``502``: this server could not reach its
+      own upstream. A ``401`` here would send a client round the sign-in loop
+      for a problem that is not theirs.
+    """
+    if exc.requires_interaction:
+        logger.warning("ms-graph-mcp: OBO needs interaction (%s)", exc.error_code or "claims")
+        headers = {}
+        challenge = _www_authenticate(
+            error=exc.error_code or "insufficient_claims", claims=exc.claims
+        )
+        if challenge:
+            headers["WWW-Authenticate"] = challenge
+        return JSONResponse({"error": str(exc)}, status_code=401, headers=headers)
+
+    logger.error("ms-graph-mcp: OBO exchange failed (%s)", exc.error_code or "unknown")
+    return JSONResponse({"error": str(exc)}, status_code=502)
 
 
 class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
@@ -133,6 +220,43 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
         entra_app_token = request.headers.get("X-Entra-App-Token", "")
         if entra_app_token:
             ctx["entra_app_token"] = entra_app_token
+
+        if await _jsonrpc_method(request) == "tools/call" and ctx["access_token"]:
+            error_response = await self._exchange_for_graph_token(ctx)
+            if error_response is not None:
+                return error_response
+
         current_request_context.set(ctx)
 
         return await call_next(request)
+
+    async def _exchange_for_graph_token(self, ctx: dict) -> JSONResponse | None:
+        """Resource-server OBO: swap the inbound token for a Graph token in place.
+
+        Returns ``None`` on success (``ctx`` is updated) or the response to send
+        instead. It lives here rather than in ``dispatch_graph_tool`` for two
+        reasons. A Conditional Access step-up arrives as a claims challenge, and
+        a tool result is an HTTP 200 — the challenge would be sealed inside a
+        JSON-RPC body no client acts on, so MFA step-up could never complete.
+        And dispatch is shared with stdio, where the inbound token is already a
+        Graph token and an exchange breaks every call; keeping this in HTTP
+        middleware means stdio has no path to it at all.
+        """
+        from ms_graph_mcp.config import get_config
+        from ms_graph_mcp.obo import OboError, acquire_token_on_behalf_of
+
+        cfg = get_config()
+        if not cfg.mcp_does_obo:
+            return None
+
+        try:
+            ctx["access_token"] = await acquire_token_on_behalf_of(
+                ctx["access_token"],
+                cfg.obo_scopes_list,
+                tenant_id=cfg.tenant_id,
+                client_id=cfg.client_id,
+                client_secret=cfg.client_secret,
+            )
+        except OboError as exc:
+            return _obo_error_response(exc)
+        return None

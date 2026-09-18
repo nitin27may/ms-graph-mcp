@@ -119,13 +119,29 @@ The two postures validate different things, and mixing them up produces a confus
   audience plus `azp == our client_id`.
 - **Resource server** (`GRAPH_MCP_DOES_OBO=true`) — the inbound token is audienced to this MCP.
   Audience binding is the gate, so the `azp` check is dropped and the server exchanges the token
-  itself.
+  itself, in the HTTP auth middleware, before the request reaches dispatch.
+
+### `401` with a `claims` challenge
+
+Conditional Access wants a step-up — MFA, or a more recent sign-in. The exchange failed, and the
+server answers `401` with `WWW-Authenticate: Bearer error="interaction_required", claims="<base64>"`.
+A conforming client decodes the claims, acquires a new token satisfying them and retries; there is
+nothing to fix on the server. Before the exchange moved into the middleware this challenge was
+sealed inside an HTTP 200 tool result, so step-up could never complete — if you see the old
+`obo_failed` tool error instead of a `401`, you are on a release before that change.
+
+### `502` from a tool call
+
+The OBO exchange was rejected for something re-authenticating will not fix: a bad or missing client
+credential, an unauthorized client, an assertion Entra would not redeem. Deliberately not a `401` —
+that would send the client round a sign-in loop for a server-side problem. The response body carries
+Entra's error code, and the correlation id is in the server log.
 
 ### `missing_graph_token`
 
 Dispatch fails closed before any Graph call. The message names the fix for the transport in use:
 over stdio an env var (`GRAPH_MCP_CLIENT_ID` to sign in, or `GRAPH_MCP_ACCESS_TOKEN` to supply one
-directly), over HTTP the `X-Graph-Token` header.
+directly), over HTTP the `Authorization: Bearer` header.
 
 Seeing it on HTTP when a token *was* sent usually means the shared-secret machine bypass was taken:
 a machine principal carries no Graph token by design, so any tool needing one fails closed here.
