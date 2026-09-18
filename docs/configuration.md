@@ -83,6 +83,7 @@ belongs, because the server is a confidential client running somewhere you contr
 | Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
 | Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `https://graph.microsoft.com/.default` |
 | Delegated scopes every caller must present | `GRAPH_MCP_REQUIRED_SCOPES` | `""` (no gate) |
+| Delegated scope naming the read tier (advertised only) | `GRAPH_MCP_READ_SCOPE_NAME` | `access_as_user` |
 | Delegated scope authorising the write tier | `GRAPH_MCP_WRITE_SCOPE_NAME` | `access_as_user.write` |
 | HTTP port | `GRAPH_MCP_PORT` | `8094` |
 | Public URL, enabling OAuth discovery | `GRAPH_MCP_RESOURCE_URL` | `""` (discovery off) |
@@ -135,7 +136,8 @@ In the resource-server posture, reaching a write tool needs **both**:
 - `X-Write-Scope: true` on the request, and
 - the `GRAPH_MCP_WRITE_SCOPE_NAME` scope (`access_as_user.write` by default) in the token's `scp`.
 
-Expose that scope alongside `access_as_user` on the MCP's app registration. The header can only
+Expose that scope alongside `access_as_user` on the MCP's app registration — step by step in
+[the authentication guide](agent-auth.md#step-1--the-servers-app-registration-both-scenarios). The header can only
 *narrow* — a client that holds write authority may still decline to use it — but it grants nothing
 on its own, because a header is something the caller sets for itself. A write tool refused for want
 of the scope returns `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`,

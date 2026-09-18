@@ -175,7 +175,9 @@ class TestTheInsufficientScopeChallenge:
         assert 'error="insufficient_scope"' in challenge
         # The scope named is the one this refusal needs, not the general
         # advertisement — otherwise the client asks for the wrong thing.
-        assert 'scope="access_as_user.write"' in challenge
+        # Fully qualified: `scp` carries bare names, but an authorization
+        # request needs the form Entra recognises.
+        assert 'scope="api://c/access_as_user.write"' in challenge
         assert "access_as_user.write" in resp.json()["error"]
 
     def test_a_write_tool_with_the_scope_passes_through(self):

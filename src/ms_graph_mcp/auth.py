@@ -89,8 +89,8 @@ def _www_authenticate(*, error: str = "", claims: str = "", scope: str = "") -> 
     # specific refusal would tell the client to ask for the wrong thing.
     if scope:
         parts.append(f'scope="{scope}"')
-    elif cfg.scopes_list:
-        parts.append(f'scope="{" ".join(cfg.scopes_list)}"')
+    elif cfg.advertised_scopes:
+        parts.append(f'scope="{" ".join(cfg.advertised_scopes)}"')
     if not parts:
         return ""
     return "Bearer " + ", ".join(parts)
@@ -308,7 +308,9 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
 
         logger.info("ms-graph-mcp: write tool '%s' refused — no write scope", tool)
         headers = {}
-        challenge = _www_authenticate(error="insufficient_scope", scope=cfg.write_scope_name)
+        challenge = _www_authenticate(
+            error="insufficient_scope", scope=cfg.qualified_scope(cfg.write_scope_name)
+        )
         if challenge:
             headers["WWW-Authenticate"] = challenge
         return JSONResponse(

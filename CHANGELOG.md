@@ -10,6 +10,15 @@ change between minor versions; breaking changes are called out explicitly.
 
 ### Changed — BREAKING (hosted deployments)
 
+- **Discovery advertises this server's own scopes, not Graph's.** In the resource-server posture
+  `scopes_supported` and the `scope=` challenge parameter now name
+  `api://<client-id>/access_as_user[.write]`. They previously carried `GRAPH_MCP_SCOPES` — the
+  *Graph* delegated scopes used for interactive stdio sign-in — which in the new posture tells a
+  discovering client to request a Graph token that this server then refuses. The `insufficient_scope`
+  challenge likewise names the fully qualified scope, since `scp` carries bare names but an
+  authorization request needs the form Entra recognises. Passthrough still advertises the Graph
+  scopes, which is correct there.
+
 - **The HTTP transport is an OAuth resource server by default.** `GRAPH_MCP_DOES_OBO` now defaults
   to `true`: the server validates that the inbound token is audienced to **itself** and performs its
   own on-behalf-of exchange for a Graph token. Previously it accepted a token audienced to
@@ -36,9 +45,14 @@ change between minor versions; breaking changes are called out explicitly.
   default: audience binding already proves a token was issued for this server. An Entra Agent ID
   token carries the agent identity's client id in `azp`, so this names the agents allowed in, as
   defence in depth rather than as the gate.
-- **`docs/agent-auth.md`** — the two-hop OBO chain, the app registrations it needs, Agent ID and
-  `InheritDelegatedPermissions`, and the `knownClientApplications` / `preAuthorizedApplications`
-  options that avoid a second consent prompt.
+- **`docs/agent-auth.md`, an authentication guide** — why the posture changed, the two-hop OBO
+  chain, and the Entra configuration for both shapes people deploy: an MCP client connecting
+  directly (VS Code, MCP Inspector — including the fact that Entra implements no dynamic client
+  registration, and the pre-authorized-client answer to it), and a custom agent calling on a user's
+  behalf, with Entra Agent ID, `InheritDelegatedPermissions`, and when to use
+  `knownClientApplications` versus `preAuthorizedApplications`.
+- **`GRAPH_MCP_READ_SCOPE_NAME`** (default `access_as_user`), the read-tier counterpart to
+  `GRAPH_MCP_WRITE_SCOPE_NAME`. Advertised, not enforced — `GRAPH_MCP_REQUIRED_SCOPES` is the gate.
 
 - **Certificate and federated client credentials.** The OBO exchange no longer requires a client
   secret: `GRAPH_MCP_CLIENT_CERT_PATH` (a PEM bundle) and `GRAPH_MCP_FEDERATED_TOKEN_FILE` (AKS

@@ -89,7 +89,7 @@ def _discovery_routes(cfg: GraphMcpConfig) -> list[Route]:
         create_protected_resource_routes(
             resource_url=AnyHttpUrl(cfg.resource_url),
             authorization_servers=[AnyHttpUrl(cfg.authorization_server)],
-            scopes_supported=cfg.scopes_list or None,
+            scopes_supported=cfg.advertised_scopes or None,
             resource_name=SERVICE_NAME,
         )
     )

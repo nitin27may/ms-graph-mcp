@@ -114,7 +114,7 @@ nav:
       - Delegated permissions: permissions.md
   - Running it:
       - Hosting: hosting.md
-      - Agent authentication: agent-auth.md
+      - Authentication guide: agent-auth.md
       - Troubleshooting: troubleshooting.md
       - Debugging: debugging.md
   - Reference:

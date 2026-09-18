@@ -188,6 +188,12 @@ class GraphMcpConfig(BaseSettings):
     required_scopes: str = Field(
         default="", validation_alias=AliasChoices("GRAPH_MCP_REQUIRED_SCOPES")
     )
+    # The delegated scope a caller needs for the read tier. Only advertised, not
+    # enforced — `required_scopes` is the gate. Named here so discovery can tell
+    # a client what to ask for.
+    read_scope_name: str = Field(
+        default="access_as_user", validation_alias=AliasChoices("GRAPH_MCP_READ_SCOPE_NAME")
+    )
     # The delegated scope that authorises the write tier. The X-Write-Scope
     # header can only narrow this, never grant it — a header is something the
     # caller sets for itself, so on its own it is not authority.
@@ -223,6 +229,49 @@ class GraphMcpConfig(BaseSettings):
             "GRAPH_MCP_FEDERATED_TOKEN_FILE", "AZURE_FEDERATED_TOKEN_FILE"
         ),
     )
+
+    @property
+    def app_id_uri(self) -> str:
+        """This server's Application ID URI — the prefix its own scopes carry.
+
+        Empty when there is no client id to derive one from, in which case there
+        is nothing truthful to advertise.
+        """
+        if self.obo_audience:
+            return self.obo_audience
+        if self.client_id:
+            return f"api://{self.client_id}"
+        return ""
+
+    def qualified_scope(self, name: str) -> str:
+        """A bare scope name as a client must request it.
+
+        The ``scp`` claim carries bare names (``access_as_user.write``), but an
+        authorization request needs the fully qualified form
+        (``api://<id>/access_as_user.write``). Challenging with the bare name
+        sends the client to ask Entra for something it will not recognise.
+        """
+        uri = self.app_id_uri
+        return f"{uri}/{name}" if uri and "/" not in name else name
+
+    @property
+    def advertised_scopes(self) -> list[str]:
+        """What discovery tells a client to request.
+
+        Posture-dependent, and this is the one place it matters most. As a
+        resource server the caller needs a token for *this* API, so the scopes
+        to advertise are this server's own. In passthrough the caller is
+        expected to arrive holding a Graph token, so the Graph scopes are the
+        honest answer there. Advertising the wrong set is not a cosmetic
+        problem: a conforming client reads this to decide what to ask for, so it
+        would request a token this server then refuses.
+        """
+        if not self.mcp_does_obo:
+            return self.scopes_list
+        uri = self.app_id_uri
+        if not uri:
+            return []
+        return [f"{uri}/{self.read_scope_name}", f"{uri}/{self.write_scope_name}"]
 
     @property
     def credential_kind(self) -> str:
