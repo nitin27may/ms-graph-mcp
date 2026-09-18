@@ -157,6 +157,12 @@ Where that block goes, and what the surrounding key is called, differs:
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers` |
 | MCP Inspector | command line, `-e` flags | — |
 
+> **Every client above connects over stdio, and every one of them signs you in interactively.**
+> That is the supported path for local use. A *hosted* server that clients reach over HTTP is a
+> different setup with different Entra requirements — and not every client can authenticate against
+> Entra remotely today. [The authentication guide](docs/agent-auth.md) covers which can, and how to
+> configure both the server and the caller.
+
 The first sign-in opens your browser for normal Microsoft 365 SSO — including MFA and conditional
 access. The result is cached in `~/.ms-graph-mcp/token_cache.json`, owner-readable only, so it does
 not prompt again.
