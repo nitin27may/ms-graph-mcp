@@ -56,13 +56,13 @@ _PUBLIC_PATHS = frozenset({"/health"})
 _PUBLIC_PATH_PREFIXES = ("/.well-known/",)
 
 
-def _www_authenticate(*, error: str = "", claims: str = "") -> str:
+def _www_authenticate(*, error: str = "", claims: str = "", scope: str = "") -> str:
     """The Bearer challenge, pointing at the metadata document.
 
-    ``error`` and ``claims`` carry an OAuth error code and a Conditional Access
-    claims challenge. The claims value is base64-encoded because it is raw JSON
-    from Entra and a bare ``{"access_token":{...}}`` in a header value would not
-    survive parsing.
+    ``error``, ``claims`` and ``scope`` carry an OAuth error code, a Conditional
+    Access claims challenge, and the specific scope a refusal needs. The claims
+    value is base64-encoded because it is raw JSON from Entra and a bare
+    ``{"access_token":{...}}`` in a header value would not survive parsing.
 
     Without a configured public URL there is no metadata pointer — but a
     challenge that names an error or carries claims is still worth sending, so
@@ -84,20 +84,26 @@ def _www_authenticate(*, error: str = "", claims: str = "") -> str:
         parts.append(f'claims="{encoded}"')
     if metadata_url:
         parts.append(f'resource_metadata="{metadata_url}"')
-    if cfg.scopes_list:
+    # An explicit scope names what *this* refusal needs; the configured list is
+    # the general advertisement. Sending the general list in answer to a
+    # specific refusal would tell the client to ask for the wrong thing.
+    if scope:
+        parts.append(f'scope="{scope}"')
+    elif cfg.scopes_list:
         parts.append(f'scope="{" ".join(cfg.scopes_list)}"')
     if not parts:
         return ""
     return "Bearer " + ", ".join(parts)
 
 
-async def _jsonrpc_method(request: Request) -> str:
-    """The JSON-RPC method of an MCP request, or ``""`` if there isn't one.
+async def _jsonrpc_call(request: Request) -> tuple[str, str]:
+    """The JSON-RPC method and tool name of an MCP request, or ``("", "")``.
 
-    The middleware has to know whether a request is a ``tools/call`` before it
-    can decide anything token-related: exchanging a token for ``initialize`` or
-    ``tools/list`` would add a round-trip to every handshake and let a failure
-    that only matters to Graph refuse a listing that has nothing to do with it.
+    The middleware has to know whether a request is a ``tools/call``, and which
+    tool, before it can decide anything token-related: exchanging a token for
+    ``initialize`` or ``tools/list`` would add a round-trip to every handshake
+    and let a failure that only matters to Graph refuse a listing that has
+    nothing to do with it.
 
     Reading the body here is safe — Starlette's ``BaseHTTPMiddleware`` caches it
     and replays it downstream, so the transport still sees the full request.
@@ -106,15 +112,20 @@ async def _jsonrpc_method(request: Request) -> str:
     call and left for the transport to reject properly.
     """
     if request.method != "POST":
-        return ""
+        return "", ""
     try:
         payload = json.loads(await request.body())
     except (ValueError, UnicodeDecodeError):
-        return ""
+        return "", ""
     if not isinstance(payload, dict):
-        return ""
+        return "", ""
     method = payload.get("method")
-    return method if isinstance(method, str) else ""
+    params = payload.get("params")
+    name = params.get("name") if isinstance(params, dict) else None
+    return (
+        method if isinstance(method, str) else "",
+        name if isinstance(name, str) else "",
+    )
 
 
 def _obo_error_response(exc: OboError) -> JSONResponse:
@@ -169,10 +180,16 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
             # pointer is what lets a spec-compliant client discover how to
             # authenticate on its own. Without it the client only knows it was
             # refused, and every integration needs bespoke configuration.
+            # A 403 gets one too when it names a scope: `insufficient_scope` is
+            # the challenge a conforming client steps up on, re-authorizing for
+            # the scope and retrying. Other 403s have nothing to challenge with.
+            challenge = ""
             if exc.status_code == 401:
                 challenge = _www_authenticate()
-                if challenge:
-                    headers["WWW-Authenticate"] = challenge
+            elif getattr(exc, "scope", ""):
+                challenge = _www_authenticate(error=exc.reason, scope=exc.scope)
+            if challenge:
+                headers["WWW-Authenticate"] = challenge
             return JSONResponse({"error": str(exc)}, status_code=exc.status_code, headers=headers)
 
         # A machine/no-user call (shared-secret bypass) carries no Graph token —
@@ -207,7 +224,7 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
             # agent path keeps using the forwarded/validated token.
             "access_token": obo_token or graph_token,
             "user_email": principal.email,
-            "write_scope": request.headers.get("X-Write-Scope", "").lower() == "true",
+            "write_scope": self._write_scope(request, principal),
             "internal_scope": internal_scope,
         }
         # Narrowing only — server.py intersects this with the startup ceiling,
@@ -221,14 +238,89 @@ class GraphMcpAuthMiddleware(BaseHTTPMiddleware):
         if entra_app_token:
             ctx["entra_app_token"] = entra_app_token
 
-        if await _jsonrpc_method(request) == "tools/call" and ctx["access_token"]:
-            error_response = await self._exchange_for_graph_token(ctx)
-            if error_response is not None:
-                return error_response
+        method, tool = await _jsonrpc_call(request)
+        if method == "tools/call":
+            challenge = self._write_scope_challenge(tool, ctx)
+            if challenge is not None:
+                return challenge
+            if ctx["access_token"]:
+                error_response = await self._exchange_for_graph_token(ctx)
+                if error_response is not None:
+                    return error_response
 
         current_request_context.set(ctx)
 
         return await call_next(request)
+
+    def _write_scope(self, request: Request, principal) -> bool:
+        """Whether this request may reach the write tier.
+
+        ``X-Write-Scope: true`` is a header the caller sets for itself, so on
+        its own it is not authority — anyone who can call the server can send
+        it. Once the inbound token is audienced to this MCP, ``scp`` says what
+        the user actually consented to, and the rule becomes
+        ``header AND scope``: the header can only ever *narrow*, letting a
+        cautious client hold back write access it was granted.
+
+        In the passthrough posture the token is audienced to Graph and its
+        ``scp`` carries Graph permissions, not scopes this server defines, so
+        there is nothing here to check and the header decides alone — that is
+        the behaviour this release deprecates rather than breaks.
+        """
+        from ms_graph_mcp.config import get_config
+
+        asked = request.headers.get("X-Write-Scope", "").lower() == "true"
+        if not asked:
+            return False
+
+        cfg = get_config()
+        if not (cfg.mcp_does_obo and cfg.write_scope_name):
+            return True
+        # The machine bypass is a trusted first-party caller with no delegated
+        # token to carry scopes; it is gated by the shared secret instead.
+        if principal.is_machine:
+            return True
+        return cfg.write_scope_name in principal.scopes
+
+    def _write_scope_challenge(self, tool: str, ctx: dict) -> JSONResponse | None:
+        """A 403 ``insufficient_scope`` for a write tool the token cannot reach.
+
+        This is the spec-native form of what ``X-Write-Scope`` did with a custom
+        header: a conforming client reads the challenge, re-authorizes for the
+        named scope and retries, with no out-of-band knowledge of this server.
+
+        Dispatch keeps its own write gate — this does not replace it. That gate
+        runs for stdio too, and is the one that fails closed; this is the HTTP
+        layer telling a client *how* to fix the refusal, which a tool result
+        cannot do.
+        """
+        from ms_graph_mcp.allowlists import WRITE_TOOL_NAME_SET
+        from ms_graph_mcp.config import get_config
+
+        cfg = get_config()
+        if tool not in WRITE_TOOL_NAME_SET or ctx["write_scope"]:
+            return None
+        # A read-only deployment refuses writes whatever the caller presents, so
+        # challenging for a scope would send them to acquire something that
+        # still will not work. Let dispatch explain that one.
+        if cfg.read_only or not (cfg.mcp_does_obo and cfg.write_scope_name):
+            return None
+
+        logger.info("ms-graph-mcp: write tool '%s' refused — no write scope", tool)
+        headers = {}
+        challenge = _www_authenticate(error="insufficient_scope", scope=cfg.write_scope_name)
+        if challenge:
+            headers["WWW-Authenticate"] = challenge
+        return JSONResponse(
+            {
+                "error": (
+                    f"Tool '{tool}' is a write tool and the presented token does not "
+                    f"carry the '{cfg.write_scope_name}' scope."
+                )
+            },
+            status_code=403,
+            headers=headers,
+        )
 
     async def _exchange_for_graph_token(self, ctx: dict) -> JSONResponse | None:
         """Resource-server OBO: swap the inbound token for a Graph token in place.

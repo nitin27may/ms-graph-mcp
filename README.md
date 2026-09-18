@@ -327,7 +327,7 @@ Three tiers, one auth seam.
 | Tier | Count | Exposed when | Examples |
 |---|---:|---|---|
 | **Read** | 53 | always | `calendar_list_upcoming_events`, `mail_search`, `meetings_get_transcript`, `files_search`, `search_query` |
-| **Write** | 23 | `X-Write-Scope: true` | `mail_send`, `calendar_create_event`, `files_create_sharing_link`, `tasks_complete_todo` |
+| **Write** | 23 | `X-Write-Scope: true` + write scope | `mail_send`, `calendar_create_event`, `files_create_sharing_link`, `tasks_complete_todo` |
 | **Internal** | 9 | `X-Internal-Scope: true`, machine principal only | `graph_request` passthrough, drive walk/upload, message attachments, app-only `probe_graph_access` |
 
 The internal tier is not part of the agent surface. A model sees **76 agent-visible** tools.

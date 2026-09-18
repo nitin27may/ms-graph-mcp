@@ -5,7 +5,8 @@ Per request (skipping configured public paths) it runs:
   1. **service-auth** (optional, disabled by default — network isolation),
   2. **token verification** (JWKS RS256 + iss/aud/exp),
   3. **azp allowlist** (when configured — downstream services),
-  4. **App-Role gate** (AGENT_EDGE only).
+  4. **App-Role gate** (AGENT_EDGE only),
+  5. **delegated-scope gate** (when configured — the `scp` claim).
 
 The shared core is :func:`authenticate_request`, reused by the FastAPI
 dependency so both entry points apply identical checks.
@@ -31,6 +32,7 @@ from ms_graph_mcp.entra.errors import (
     AppOnlyError,
     AuthError,
     AzpError,
+    InsufficientScopeError,
     MissingTokenError,
     RoleError,
     ServiceAuthError,
@@ -125,6 +127,18 @@ async def authenticate_request(
         required = cfg.required_roles_set
         if not check_roles(principal, required, cfg.allow_app_only):
             raise RoleError("caller lacks a required role")
+
+    # 6. Delegated-scope gate. Empty by default, so this is inert until an
+    # operator opts in. Once a resource server validates that a token was
+    # audienced to it, `scp` is the only thing left saying *what* the user
+    # authorized it to do — without this, any client able to obtain a token for
+    # this MCP reaches the whole tool surface. ANY-of, matching the role gate.
+    required_scopes = cfg.required_scopes_set
+    if required_scopes and not (required_scopes & principal.scopes):
+        raise InsufficientScopeError(
+            "caller lacks a required delegated scope",
+            scope=" ".join(sorted(required_scopes)),
+        )
 
     _bind_context(request, token, principal)
     return principal

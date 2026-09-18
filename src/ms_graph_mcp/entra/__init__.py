@@ -31,6 +31,7 @@ from ms_graph_mcp.entra.errors import (
     AuthError,
     AuthorizationError,
     AzpError,
+    InsufficientScopeError,
     InvalidTokenError,
     MissingTokenError,
     RoleError,
@@ -80,4 +81,5 @@ __all__ = [
     "AzpError",
     "RoleError",
     "AppOnlyError",
+    "InsufficientScopeError",
 ]

@@ -8,6 +8,32 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+### Added
+
+- **Write authority can come from the token.** `Principal` now carries the delegated scopes from the
+  `scp` claim, and in the resource-server posture the write tier requires
+  `access_as_user.write` (`GRAPH_MCP_WRITE_SCOPE_NAME`) in the token as well as
+  `X-Write-Scope: true`. The header can only *narrow* — a client may still decline write access it
+  holds — but it no longer grants anything on its own, because a header is something the caller sets
+  for itself. Unaffected in the passthrough posture, where the token is audienced to Graph and its
+  `scp` carries Graph permissions rather than scopes this server defines.
+- **A write tool refused for want of a scope answers `403` with
+  `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`.** That is the challenge a
+  conforming MCP client steps up on, re-authorizing for the named scope and retrying, with no
+  out-of-band knowledge of this server — which a custom header could never provide. A read-only
+  deployment does not challenge: no scope would help, and dispatch gives the real reason.
+- **`GRAPH_MCP_REQUIRED_SCOPES`** — a general delegated-scope gate (`WG_AUTH_REQUIRED_SCOPES` at the
+  toolkit layer), ANY-of, matching the existing role gate. Empty by default, so nothing changes
+  until an operator opts in. Configuring it forces RS256 verification on, exactly as a role gate
+  does: a scope check over an unverified token is forgeable, and a gate that can be bypassed by
+  forging a claim is worse than none because it reads as protection.
+
+### Deprecated
+
+- **`X-Write-Scope: true` as the sole grant of write authority**, replaced by the
+  `access_as_user.write` scope in the token. Removal in `0.5.0`; registered in
+  `src/ms_graph_mcp/deprecations.py`, so the build fails if it is forgotten.
+
 ### Fixed
 
 - **A Conditional Access step-up can now complete.** When Entra answers the on-behalf-of exchange

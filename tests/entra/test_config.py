@@ -40,6 +40,18 @@ def test_verify_forced_on_when_roles_set():
     assert c.verify_signature is True
 
 
+def test_verify_forced_on_when_scopes_set():
+    """A scope check over an unverified token is forgeable — and worse than no
+    gate, because it reads as protection."""
+    c = AuthConfig(jwt_verify=False, required_scopes="access_as_user")
+    assert c.verify_signature is True
+
+
+def test_required_scopes_parse_as_csv():
+    c = AuthConfig(required_scopes="access_as_user, access_as_user.write")
+    assert c.required_scopes_set == {"access_as_user", "access_as_user.write"}
+
+
 def test_verify_off_when_no_roles_and_disabled():
     c = AuthConfig(jwt_verify=False)
     assert c.verify_signature is False

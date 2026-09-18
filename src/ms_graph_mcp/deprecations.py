@@ -61,4 +61,23 @@ DEPRECATIONS: tuple[Deprecation, ...] = (
             "Aliases are already absent from tools/list, so they cost no context."
         ),
     ),
+    Deprecation(
+        what="`X-Write-Scope: true` as the sole grant of write authority",
+        replacement=(
+            "the `access_as_user.write` delegated scope in the token's `scp` claim "
+            "(`GRAPH_MCP_WRITE_SCOPE_NAME`); the header may still narrow it"
+        ),
+        deprecated_in="0.4.0",
+        remove_in="0.5.0",
+        note=(
+            "A header is something the caller sets for itself, so it was never "
+            "authority — anyone who could reach the server could send it. The "
+            "header keeps working: the rule is `header AND scope`, so a client can "
+            "still decline write access it holds. What goes away in 0.5.0 is the "
+            "header deciding alone. Only the resource-server posture is affected; "
+            "in passthrough the token is audienced to Graph and its `scp` carries "
+            "Graph permissions rather than scopes this server defines, so there is "
+            "nothing to check against."
+        ),
+    ),
 )

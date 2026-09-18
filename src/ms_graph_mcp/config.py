@@ -176,6 +176,20 @@ class GraphMcpConfig(BaseSettings):
         default="https://graph.microsoft.com/.default",
         validation_alias=AliasChoices("GRAPH_MCP_OBO_SCOPES"),
     )
+    # Comma-separated delegated scopes every caller must present in `scp`.
+    # Empty by default: a scope gate is only meaningful once the inbound token
+    # is audienced to this MCP (GRAPH_MCP_DOES_OBO), because a Graph-audienced
+    # token's `scp` carries Graph permissions, not this server's.
+    required_scopes: str = Field(
+        default="", validation_alias=AliasChoices("GRAPH_MCP_REQUIRED_SCOPES")
+    )
+    # The delegated scope that authorises the write tier. The X-Write-Scope
+    # header can only narrow this, never grant it — a header is something the
+    # caller sets for itself, so on its own it is not authority.
+    write_scope_name: str = Field(
+        default="access_as_user.write",
+        validation_alias=AliasChoices("GRAPH_MCP_WRITE_SCOPE_NAME"),
+    )
 
     @property
     def scopes_list(self) -> list[str]:
@@ -246,6 +260,7 @@ class GraphMcpConfig(BaseSettings):
                 # Empty obo_audience → AuthConfig derives api://<client_id> + GUID.
                 audience=self.obo_audience,
                 allowed_azp="",
+                required_scopes=self.required_scopes,
                 shared_secret=self.shared_secret,
             )
         return AuthConfig(
@@ -255,6 +270,9 @@ class GraphMcpConfig(BaseSettings):
             # Restrict to OBO tokens minted by our app (empty client_id → no azp
             # gate, e.g. an unconfigured standalone server).
             allowed_azp=self.client_id,
+            # No scope gate here on purpose: in this posture `scp` carries the
+            # *Graph* permissions the agent's token was granted, not scopes this
+            # server defines. Gating on it would check the wrong thing.
             shared_secret=self.shared_secret,
         )
 

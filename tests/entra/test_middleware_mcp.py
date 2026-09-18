@@ -100,3 +100,60 @@ def test_real_app_only_token_accepted_when_explicitly_allowed(make_token, patche
     with TestClient(_app(cfg)) as client:
         resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
     assert resp.status_code == 200
+
+
+# ── delegated-scope gate (issue #29 §2) ───────────────────────────────────────
+#
+# Empty by default, so every test above is unaffected. Once a resource server
+# validates that a token was audienced to it, `scp` is the only thing left
+# saying *what* the user authorized it to do.
+
+
+def test_no_scope_gate_by_default(make_token, patched_jwks):
+    """Nothing changes for a deployment that has not opted in."""
+    tok = make_token(aud=GRAPH_AUD, scp="something.else")
+    with TestClient(_app(_mcp_cfg())) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 200
+
+
+def test_a_token_carrying_the_required_scope_is_admitted(make_token, patched_jwks):
+    tok = make_token(aud=GRAPH_AUD, scp="access_as_user")
+    cfg = _mcp_cfg(required_scopes="access_as_user")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 200
+
+
+def test_a_token_without_it_is_403(make_token, patched_jwks):
+    tok = make_token(aud=GRAPH_AUD, scp="User.Read")
+    cfg = _mcp_cfg(required_scopes="access_as_user")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 403
+
+
+def test_a_missing_scp_claim_fails_closed(make_token, patched_jwks):
+    """No scopes is an empty set, and an empty set intersects nothing."""
+    tok = make_token(remove=("scp",), aud=GRAPH_AUD)
+    cfg = _mcp_cfg(required_scopes="access_as_user", allow_app_only=True)
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 403
+
+
+def test_any_of_the_required_scopes_is_enough(make_token, patched_jwks):
+    """Same ANY-of semantics as the role gate, so the two read alike."""
+    tok = make_token(aud=GRAPH_AUD, scp="access_as_user.write")
+    cfg = _mcp_cfg(required_scopes="access_as_user,access_as_user.write")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": f"Bearer {tok}"})
+    assert resp.status_code == 200
+
+
+def test_the_machine_bypass_is_not_scope_gated(make_token, patched_jwks):
+    """The shared secret is the gate there; it carries no delegated token."""
+    cfg = _mcp_cfg(required_scopes="access_as_user", shared_secret="fleet-secret-value")
+    with TestClient(_app(cfg)) as client:
+        resp = client.post("/mcp", headers={"Authorization": "Bearer fleet-secret-value"})
+    assert resp.status_code == 200
