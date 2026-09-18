@@ -75,7 +75,7 @@ flowchart TD
   on the first tool call. Existing deployments either configure the credential or set
   `GRAPH_MCP_DOES_OBO=false` and keep working until 1.0.0.
 - Callers must obtain a token audienced to this server rather than to Graph — an app-registration
-  change, not a code change. See [agent-auth.md](../agent-auth.md).
+  change, not a code change. See [the authentication guide](../authentication.md).
 - A second hop of latency on the first tool call of a session. MSAL caches in-process, so subsequent
   calls in the same process reuse the Graph token.
 

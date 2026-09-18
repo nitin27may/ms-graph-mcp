@@ -137,7 +137,7 @@ In the resource-server posture, reaching a write tool needs **both**:
 - the `GRAPH_MCP_WRITE_SCOPE_NAME` scope (`access_as_user.write` by default) in the token's `scp`.
 
 Expose that scope alongside `access_as_user` on the MCP's app registration — step by step in
-[the authentication guide](agent-auth.md#step-1--the-servers-app-registration-both-scenarios). The header can only
+[the authentication guide](authentication.md#step-1--the-servers-app-registration-both-scenarios). The header can only
 *narrow* — a client that holds write authority may still decline to use it — but it grants nothing
 on its own, because a header is something the caller sets for itself. A write tool refused for want
 of the scope returns `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`,
@@ -155,7 +155,7 @@ Selected by `GRAPH_MCP_DOES_OBO`:
   is the gate, and the server exchanges that token for a Graph token via the on-behalf-of flow
   before the tool runs. This needs a tenant id, a client id and a client credential — **the server
   refuses to start without them**. Setting up the app registrations is covered in
-  [agent-auth.md](agent-auth.md).
+  [the authentication guide](authentication.md).
 - **Passthrough** (`GRAPH_MCP_DOES_OBO=false`). The caller forwards an already-OBO'd Graph token,
   validated for the Graph audience *plus* `azp == our client_id`. **Deprecated since 0.4.0, removed
   in 1.0.0**, and it warns at startup.
@@ -167,7 +167,7 @@ cannot satisfy a Conditional Access step-up, because the claims challenge has no
 [ADR 0004](adr/0004-resource-server-by-default.md).
 
 > **Upgrading from 0.3.x?** A hosted deployment that never set `GRAPH_MCP_DOES_OBO` will not start
-> until it has a credential. Either configure one — see [agent-auth.md](agent-auth.md) — or set
+> until it has a credential. Either configure one — see [the authentication guide](authentication.md) — or set
 > `GRAPH_MCP_DOES_OBO=false` to keep the old behaviour while you migrate. stdio is unaffected.
 
 ---

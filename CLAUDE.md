@@ -172,7 +172,7 @@ Selected by `GRAPH_MCP_DOES_OBO` (`config.py`, `mcp_does_obo`):
 - **Resource server (default)** — the inbound token is audienced to this MCP. Audience binding is
   the gate, and the **HTTP auth middleware** exchanges the token via `obo.py`
   (`acquire_token_on_behalf_of`, MSAL) before the request reaches dispatch. `build_app()` refuses to
-  start without a tenant id, client id and client credential. See ADR 0004 and `docs/agent-auth.md`.
+  start without a tenant id, client id and client credential. See ADR 0004 and `docs/authentication.md`.
 - **Passthrough** (`mcp_does_obo=false`) — the caller forwards an already-OBO'd Graph token,
   validated for the Graph audience plus `azp == our client_id`. Deprecated in 0.4.0, removed in
   1.0.0; warns at startup. A token audienced to Graph was issued *for Graph*, and `azp` says who

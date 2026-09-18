@@ -32,7 +32,7 @@ change between minor versions; breaking changes are called out explicitly.
   **What breaks.** A hosted deployment that never set `GRAPH_MCP_DOES_OBO` will **refuse to start**
   until it has a tenant id, client id and client credential — failing at boot rather than passing a
   readiness probe and breaking on a user's first tool call. Callers must also present a token
-  audienced to this server. Either configure the credential ([agent-auth.md](docs/agent-auth.md)
+  audienced to this server. Either configure the credential ([the authentication guide](docs/authentication.md)
   sets out the app-registration changes), or set `GRAPH_MCP_DOES_OBO=false` to keep the old
   behaviour while migrating.
 
@@ -45,7 +45,7 @@ change between minor versions; breaking changes are called out explicitly.
   default: audience binding already proves a token was issued for this server. An Entra Agent ID
   token carries the agent identity's client id in `azp`, so this names the agents allowed in, as
   defence in depth rather than as the gate.
-- **`docs/agent-auth.md`, an authentication guide** — why the posture changed, the two-hop OBO
+- **`docs/authentication.md`, an authentication guide** — why the posture changed, the two-hop OBO
   chain, and the Entra configuration for both shapes people deploy: an MCP client connecting
   directly (VS Code, MCP Inspector — including the fact that Entra implements no dynamic client
   registration, and the pre-authorized-client answer to it), and a custom agent calling on a user's

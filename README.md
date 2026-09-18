@@ -160,7 +160,7 @@ Where that block goes, and what the surrounding key is called, differs:
 > **Every client above connects over stdio, and every one of them signs you in interactively.**
 > That is the supported path for local use. A *hosted* server that clients reach over HTTP is a
 > different setup with different Entra requirements — and not every client can authenticate against
-> Entra remotely today. [The authentication guide](docs/agent-auth.md) covers which can, and how to
+> Entra remotely today. [The authentication guide](docs/authentication.md) covers which can, and how to
 > configure both the server and the caller.
 
 The first sign-in opens your browser for normal Microsoft 365 SSO — including MFA and conditional
