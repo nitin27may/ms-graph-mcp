@@ -80,7 +80,7 @@ that flow outright as a phishing vector.
 
 ## SSL certificate verify failures behind corporate proxies
 
-When this server calls Microsoft Graph, `httpx` validates the TLS chain using the Python/OpenSSL
+When this server calls Microsoft Graph, `httpx2` validates the TLS chain using the Python/OpenSSL
 trust store of the process running `ms-graph-mcp`.
 
 In corporate networks with TLS inspection, Graph certificates are often re-issued by a proxy CA. If

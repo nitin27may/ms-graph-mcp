@@ -150,8 +150,8 @@ async def test_no_send_mail_call():
             "ms_graph_mcp.email.graph_get",
             AsyncMock(return_value=_event_payload(attendees=["bob@contoso.com"])),
         ),
-        # No httpx send-mail patch needed; if mail_propose called
-        # /me/sendMail at all the test would import httpx & fail
+        # No httpx2 send-mail patch needed; if mail_propose called
+        # /me/sendMail at all the test would import httpx2 & fail
         # network. The structural guarantee here is the function
         # body's lack of any send call — assertion is the absence of
         # a sendMail invocation via the existing sendmail_mock side

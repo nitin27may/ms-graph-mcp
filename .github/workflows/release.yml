@@ -212,7 +212,7 @@ jobs:
       # rather than failing the release over CDN propagation.
       #
       # --extra-index-url is mandatory: TestPyPI does not mirror PyPI, so every
-      # real dependency (mcp, httpx, pydantic, …) has to resolve from PyPI or
+      # real dependency (mcp, httpx2, pydantic, …) has to resolve from PyPI or
       # the install fails for reasons that have nothing to do with this package.
       - name: Install the published artifact into a clean venv
         env:

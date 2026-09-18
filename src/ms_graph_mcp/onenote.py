@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_get_text, graph_post_raw
@@ -164,7 +164,7 @@ async def notes_list_pages(params: ListOnenotePagesInput, context: dict) -> list
                 "$orderby": "lastModifiedDateTime desc",
             },
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Notes.Read", tool="notes_list_pages")
     return [
         {
@@ -195,7 +195,7 @@ async def notes_get_page_content(params: GetOnenotePageInput, context: dict) -> 
     # meeting-transcript VTT path uses.
     try:
         html = await graph_get_text(token, f"/me/onenote/pages/{page_id}/content")
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Notes.Read", tool="notes_get_page_content")
     limit = 50_000
     return {

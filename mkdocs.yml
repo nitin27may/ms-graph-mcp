@@ -124,7 +124,7 @@ nav:
   - Design decisions:
       - Overview: adr/index.md
       - ADR 0001 — src layout: adr/0001-src-layout.md
-      - ADR 0002 — raw httpx client: adr/0002-raw-httpx-graph-client.md
+      - ADR 0002 — raw HTTP client: adr/0002-raw-httpx-graph-client.md
       - ADR 0003 — in-server token validation: adr/0003-no-gateway-trust-mode.md
 # Copyright footer text
 #

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_patch, graph_post_no_content
@@ -618,7 +618,7 @@ async def mail_reply(params: ReplyEmailInput, context: dict) -> dict:
         await graph_post_no_content(
             token, f"/me/messages/{message_id}/reply", {"comment": params.comment_html}
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Mail.Send", tool="mail_reply")
     return {"status": "sent", "message_id": message_id, "recipients": "original sender"}
 
@@ -639,7 +639,7 @@ async def mail_reply_all(params: ReplyEmailInput, context: dict) -> dict:
         await graph_post_no_content(
             token, f"/me/messages/{message_id}/replyAll", {"comment": params.comment_html}
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Mail.Send", tool="mail_reply_all")
     return {"status": "sent", "message_id": message_id, "recipients": "all thread participants"}
 
@@ -670,7 +670,7 @@ async def mail_forward(params: ForwardEmailInput, context: dict) -> dict:
     }
     try:
         await graph_post_no_content(token, f"/me/messages/{message_id}/forward", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Mail.Send", tool="mail_forward")
     return {"status": "sent", "message_id": message_id, "recipients": params.to_recipients}
 
@@ -688,6 +688,6 @@ async def mail_mark_read(params: MarkEmailReadInput, context: dict) -> dict:
     message_id = validate_graph_id(params.message_id, "message_id")
     try:
         await graph_patch(token, f"/me/messages/{message_id}", {"isRead": params.is_read})
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Mail.ReadWrite", tool="mail_mark_read")
     return {"status": "read" if params.is_read else "unread", "message_id": message_id}

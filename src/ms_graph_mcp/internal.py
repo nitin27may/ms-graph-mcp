@@ -219,7 +219,7 @@ class DownloadDriveItemInput(BaseModel):
     )
 )
 async def graph_download_drive_item(params: DownloadDriveItemInput, context: dict) -> dict:
-    import httpx
+    import httpx2
 
     token = context["access_token"]
 
@@ -243,9 +243,9 @@ async def graph_download_drive_item(params: DownloadDriveItemInput, context: dic
         raise ValueError(f"File is {size} bytes, exceeds the {params.max_bytes}-byte safety cap")
 
     # Download via the pre-authorised URL (no auth header required)
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         verify=not get_config().disable_ssl_verify,
-        timeout=httpx.Timeout(60.0),
+        timeout=httpx2.Timeout(60.0),
         follow_redirects=True,
     ) as client:
         resp = await client.get(download_url)

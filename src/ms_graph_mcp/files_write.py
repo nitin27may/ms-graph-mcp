@@ -26,7 +26,7 @@ import re
 import urllib.parse
 from typing import Any
 
-import httpx
+import httpx2
 from opentelemetry import trace
 from pydantic import BaseModel, Field
 
@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer("ms_graph_mcp")
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-_TIMEOUT = httpx.Timeout(60.0)
+_TIMEOUT = httpx2.Timeout(60.0)
 # Graph's documented threshold for the simple PUT path. Files above this
 # need a createUploadSession + chunked upload.
 _SIMPLE_UPLOAD_LIMIT = 4 * 1024 * 1024
@@ -166,7 +166,7 @@ async def ensure_folder_exists(
         }
         try:
             last_item = await graph_post(access_token, f"{parent_endpoint}/children", body)
-        except httpx.HTTPStatusError as exc:
+        except httpx2.HTTPStatusError as exc:
             if exc.response.status_code != 409:
                 raise OneDriveError(
                     f"Failed to create folder /{walked}: HTTP {exc.response.status_code}",
@@ -253,12 +253,12 @@ async def upload_file_to_drive(
     # pre-signed, short-lived URL on a different host, and Graph requires that
     # NO Authorization header is sent to it — so it is not a Graph API call and
     # none of the client helpers apply.
-    async with httpx.AsyncClient(
+    async with httpx2.AsyncClient(
         verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
     ) as client:
         total = len(content)
         offset = 0
-        last_resp: httpx.Response | None = None
+        last_resp: httpx2.Response | None = None
         while offset < total:
             chunk = content[offset : offset + _CHUNK_SIZE]
             end = offset + len(chunk) - 1
@@ -513,7 +513,7 @@ async def files_create_sharing_link(params: CreateSharingLinkInput, context: dic
             f"{base}/items/{item_id}/createLink",
             {"type": params.link_type, "scope": params.scope},
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         status = exc.response.status_code if exc.response is not None else None
         if status == 403:
             return {

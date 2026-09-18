@@ -173,11 +173,11 @@ makes a config change look like it did nothing.
 
 Collected in `CLAUDE.md`; the ones that cost the most time:
 
-- **`client.py:_build_url` does not URL-encode `$` on purpose.** Switching to httpx `params=` breaks
+- **`client.py:_build_url` does not URL-encode `$` on purpose.** Switching to httpx2 `params=` breaks
   every OData query, and over-quoting double-encodes `%3a` inside JoinWebUrl filter values.
 - **`graph_get_url()`'s host check is an SSRF guard.** It is the only helper taking a caller-supplied
   full URL; without the check a bearer-token request could be redirected off-host.
-- **`mcp` 2.0 runs on `httpx2`, a distribution separate from `httpx`.** Both are installed — the SDK
-  uses `httpx2`, `client.py` uses `httpx`. Do not mix them in one module.
+- **There is one HTTP stack: `httpx2`**, shared by the SDK and the Graph client. `httpx` is not a
+  dependency; adding an `import httpx` back fails the undeclared-import test.
 - **`streamable_http_app()` owns the app's lifespan.** Replacing it means the transport never starts;
   chain onto `application.router.lifespan_context` instead.

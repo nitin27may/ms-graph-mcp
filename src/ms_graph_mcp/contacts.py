@@ -17,7 +17,7 @@ who have no tenant account at all and are therefore invisible to the other two.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_post
@@ -85,7 +85,7 @@ async def people_list_contacts(params: ListContactsInput, context: dict) -> list
                 "$orderby": "displayName",
             },
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Contacts.Read", tool="people_list_contacts")
     return [_slim_contact(c) for c in (data.get("value") or [])]
 
@@ -117,7 +117,7 @@ async def people_search_contacts(params: SearchContactsInput, context: dict) -> 
                 "$top": min(max(params.max_results, 1), 100),
             },
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Contacts.Read", tool="people_search_contacts")
     return [_slim_contact(c) for c in (data.get("value") or [])]
 
@@ -152,7 +152,7 @@ async def people_create_contact(params: CreateContactInput, context: dict) -> di
         body["jobTitle"] = params.job_title
     try:
         created = await graph_post(token, "/me/contacts", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Contacts.ReadWrite", tool="people_create_contact")
     return _slim_contact(created)
 

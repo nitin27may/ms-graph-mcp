@@ -21,7 +21,7 @@ search, people, contacts, directory, tasks and OneNote, over **stdio** or **Stre
 
 ![The ms-graph-mcp tools listed in VS Code's Configure Tools panel](https://raw.githubusercontent.com/nitin27may/ms-graph-mcp/main/docs/tools.png)
 
-- **No `msgraph-sdk`, no `azure-identity`** — the Graph client is raw `httpx`, so the dependency tree
+- **No `msgraph-sdk`, no `azure-identity`** — the Graph client is raw `httpx2`, so the dependency tree
   stays small and the wire behaviour is inspectable.
 - **Read/write separation is enforced, not advisory** — write tools are hidden *and* refused unless
   the caller explicitly opts in.

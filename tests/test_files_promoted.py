@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from ms_graph_mcp.context import current_request_context
@@ -207,9 +207,9 @@ async def test_create_sharing_link_rejects_bad_enums_before_calling_graph(kwargs
 
 async def test_create_sharing_link_explains_a_403_rather_than_leaking_http():
     """Tenants commonly disable anonymous links; the model should be told that."""
-    response = httpx.Response(403, request=httpx.Request("POST", "https://graph.microsoft.com"))
+    response = httpx2.Response(403, request=httpx2.Request("POST", "https://graph.microsoft.com"))
     with patch("ms_graph_mcp.files_write.graph_post", new=AsyncMock()) as post:
-        post.side_effect = httpx.HTTPStatusError(
+        post.side_effect = httpx2.HTTPStatusError(
             "forbidden", request=response.request, response=response
         )
         result = await files_create_sharing_link(

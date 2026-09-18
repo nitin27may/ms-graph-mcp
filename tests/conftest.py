@@ -25,11 +25,12 @@ def _no_network(monkeypatch):
     whatever token is lying around, the test fails with a puzzling 401 instead
     of naming the unpatched call, and the suite gets slow and flaky in CI.
 
-    This is not hypothetical. The tests patch the *global* ``httpx.AsyncClient``
-    rather than the name bound inside ``ms_graph_mcp.client``, which works only
-    while the two are the same module object. Aliasing the import — as an httpx2
-    migration would — silently sends live requests to Microsoft. That was found
-    by spiking exactly that change (see issue #25).
+    This is not hypothetical. The tests used to patch the *global* HTTP client
+    class rather than the name bound inside ``ms_graph_mcp.client``, which works
+    only while the two are the same module object — so the httpx2 migration
+    silently sent live requests to Microsoft when it was first spiked (issue
+    #25). The patches now target the module attribute, and this guard is what
+    keeps a future mis-patch from escaping the same way.
 
     Loopback stays open: the Starlette ``TestClient`` and the HTTP transport
     tests are in-process and legitimately use it.

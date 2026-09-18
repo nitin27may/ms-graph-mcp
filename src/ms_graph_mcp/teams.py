@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_post
@@ -56,7 +56,7 @@ async def chat_search_messages(
     }
     try:
         data = await graph_post(token, "/search/query", search_body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         # Previously this swallowed every non-200 and returned [], so a
         # permission problem was indistinguishable from "no messages match".
         return graph_error_response(exc, scope="Chat.Read", tool="chat_search_messages")

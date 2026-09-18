@@ -1,5 +1,5 @@
 """
-Shared httpx helpers for Microsoft Graph REST API.
+Shared httpx2 helpers for Microsoft Graph REST API.
 
 All tools receive the user's delegated access token via context["access_token"].
 TLS verification is disabled for corporate proxy compatibility (mirrors the
@@ -13,7 +13,7 @@ import logging
 import urllib.parse
 from dataclasses import dataclass
 
-import httpx
+import httpx2
 from opentelemetry import trace
 
 from ms_graph_mcp.config import get_config
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer("ms_graph_mcp")
 
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-_TIMEOUT = httpx.Timeout(30.0)
+_TIMEOUT = httpx2.Timeout(30.0)
 
 
 def _headers(access_token: str) -> dict[str, str]:
@@ -33,7 +33,7 @@ def _headers(access_token: str) -> dict[str, str]:
     }
 
 
-def _log_error(resp: httpx.Response) -> None:
+def _log_error(resp: httpx2.Response) -> None:
     """Log Graph API errors with the full response body for diagnostics."""
     try:
         body = resp.json()
@@ -81,7 +81,7 @@ def _build_url(base: str, **params) -> str:
     """
     Build a URL with OData query params ($filter, $select, etc.) as literal keys.
 
-    Two httpx 0.28 problems:
+    Two problems with passing these as ``params=`` (httpx and httpx2 agree here):
       1. params={} encodes $ → %24  (breaks $filter, $select, …)
       2. urllib.parse.quote(safe=',') double-encodes %3a → %253a inside
          JoinWebUrl filter values.  The Graph OData parser expects the filter
@@ -129,7 +129,7 @@ async def graph_get(access_token: str, path: str, **params) -> dict:
         "graph.request",
         attributes={"http.method": "GET", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
         ) as client:
             logger.info("[Graph] GET %s", path)
@@ -165,7 +165,7 @@ async def graph_get_text(access_token: str, path: str, **params) -> str:
         "graph.request",
         attributes={"http.method": "GET", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
         ) as client:
             logger.info("[Graph] GET %s (text)", path)
@@ -187,7 +187,7 @@ async def graph_post(access_token: str, path: str, body: dict) -> dict:
         "graph.request",
         attributes={"http.method": "POST", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
         ) as client:
             logger.info("[Graph] POST %s", path)
@@ -214,10 +214,10 @@ async def graph_post_no_content(
     ``forward``, ``accept``, ``decline``, ``cancel`` — answer ``202 Accepted``
     with an empty body. :func:`graph_post` ends in ``resp.json()`` and therefore
     blows up on exactly those calls, which is why several tools historically
-    hand-rolled ``httpx`` and lost the tracing span, the ``[Graph]`` error log,
+    hand-rolled the HTTP client and lost the tracing span, the ``[Graph]`` error log,
     and the TLS toggle in the process.
 
-    Returns ``None`` on success and raises ``httpx.HTTPStatusError`` otherwise.
+    Returns ``None`` on success and raises ``httpx2.HTTPStatusError`` otherwise.
     Tolerates a body if one is sent — some endpoints return ``201`` with content
     that the caller does not need.
     """
@@ -229,7 +229,7 @@ async def graph_post_no_content(
         "graph.request",
         attributes={"http.method": "POST", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
         ) as client:
             logger.info("[Graph] POST %s", path)
@@ -281,7 +281,7 @@ async def graph_try_get(
     — an attendee hitting an organizer-only filter, or a transcript that simply
     has no content yet.
 
-    Before this existed those callers hand-rolled ``httpx``, and in doing so
+    Before this existed those callers hand-rolled the HTTP client, and in doing so
     lost the tracing span, the ``[Graph]`` error logging and the TLS toggle. Use
     this instead of reaching for a client.
     """
@@ -295,9 +295,9 @@ async def graph_try_get(
         "graph.request",
         attributes={"http.method": "GET", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify,
-            timeout=httpx.Timeout(timeout_seconds),
+            timeout=httpx2.Timeout(timeout_seconds),
             # File content endpoints answer 302 with a short-lived download URL
             # on a different host, so the redirect has to be followed to get any
             # bytes at all.
@@ -342,7 +342,7 @@ async def graph_post_raw(
     A few Graph endpoints take a raw entity body rather than a JSON document —
     OneNote page creation wants ``text/html``, for instance. :func:`graph_post`
     serialises its argument as JSON and so cannot express those, which is why
-    they used to hand-roll ``httpx`` and lose the tracing span, the ``[Graph]``
+    they used to hand-roll the HTTP client and lose the tracing span, the ``[Graph]``
     error logging and the TLS toggle.
     """
     url = f"{_GRAPH_BASE}{path}"
@@ -355,9 +355,9 @@ async def graph_post_raw(
         "graph.request",
         attributes={"http.method": "POST", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify,
-            timeout=httpx.Timeout(timeout_seconds),
+            timeout=httpx2.Timeout(timeout_seconds),
         ) as client:
             logger.info("[Graph] POST %s (%s)", path, content_type)
             resp = await client.post(url, headers=headers, content=content)
@@ -398,9 +398,9 @@ async def graph_put_raw(
         "graph.request",
         attributes={"http.method": "PUT", "http.url": url, "graph.upload.size": len(content)},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify,
-            timeout=httpx.Timeout(timeout_seconds),
+            timeout=httpx2.Timeout(timeout_seconds),
         ) as client:
             logger.info("[Graph] PUT %s (%d bytes)", path, len(content))
             resp = await client.put(url, headers=headers, content=content)
@@ -445,7 +445,7 @@ async def graph_patch(
         "graph.request",
         attributes={"http.method": "PATCH", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
         ) as client:
             logger.info("[Graph] PATCH %s", path)
@@ -481,7 +481,7 @@ async def graph_delete(
         "graph.request",
         attributes={"http.method": "DELETE", "http.url": url},
     ) as span:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify, timeout=_TIMEOUT
         ) as client:
             logger.info("[Graph] DELETE %s", path)
@@ -503,17 +503,17 @@ async def graph_probe_status(
     For access-revalidation probes that must distinguish 200 / 403 / 404 / 429 /
     5xx rather than treat every non-200 as an error (so they can't use
     ``graph_get``, which raises). Returns ``None`` on transport failure. The one
-    place Graph probe GETs live, so the revalidation sweep doesn't hand-roll httpx.
+    place Graph probe GETs live, so the revalidation sweep doesn't hand-roll the HTTP client.
     """
     url = f"{_GRAPH_BASE}{path}"
     try:
-        async with httpx.AsyncClient(
+        async with httpx2.AsyncClient(
             verify=not get_config().disable_ssl_verify,
-            timeout=httpx.Timeout(timeout_seconds),
+            timeout=httpx2.Timeout(timeout_seconds),
         ) as client:
             resp = await client.get(url, headers=_headers(access_token))
             return resp.status_code
-    except httpx.HTTPError:
+    except httpx2.HTTPError:
         return None
 
 
@@ -542,8 +542,8 @@ async def graph_get_url(
     headers = {**_headers(access_token), "Accept": "application/json"}
     if extra_headers:
         headers.update(extra_headers)
-    async with httpx.AsyncClient(
-        verify=not get_config().disable_ssl_verify, timeout=httpx.Timeout(timeout_seconds)
+    async with httpx2.AsyncClient(
+        verify=not get_config().disable_ssl_verify, timeout=httpx2.Timeout(timeout_seconds)
     ) as client:
         resp = await client.get(url, headers=headers)
         if resp.status_code == 429:
