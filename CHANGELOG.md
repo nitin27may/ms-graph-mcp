@@ -8,6 +8,20 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+### Changed
+
+- **One HTTP stack, not two.** The Graph client moves from `httpx` to `httpx2`, the distribution
+  `mcp` 2.0 already depends on, so only one HTTP library is installed. `httpx` is gone from
+  `dependencies`. No behaviour change: the two APIs are equivalent for everything `client.py` uses,
+  and the `_build_url` OData encoding — `$` left literal, `%3a` not re-quoted — is byte-identical
+  under both. Imports in `src/` are explicit `httpx2`, never aliased to `httpx`, so nothing reads as
+  the wrong distribution.
+- **Tests patch the HTTP client at the module boundary.** The client mocks targeted the global
+  `httpx.AsyncClient` rather than the name bound inside `ms_graph_mcp.client`, which stops applying
+  the moment the import is swapped — and the suite then calls Graph for real. They now target
+  `ms_graph_mcp.client.httpx2.AsyncClient`. The `_no_network` guard stays as enforcement rather than
+  as the only line of defence.
+
 ## [0.3.0] - 2026-08-20
 
 ### Added

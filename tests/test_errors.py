@@ -8,7 +8,7 @@ say "stop", because getting that backwards is worse than having no signal.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from ms_graph_mcp.errors import (
@@ -22,10 +22,10 @@ from ms_graph_mcp.errors import (
 )
 
 
-def _http_error(status: int, headers: dict | None = None) -> httpx.HTTPStatusError:
-    request = httpx.Request("GET", "https://graph.microsoft.com/v1.0/me")
-    response = httpx.Response(status, request=request, headers=headers or {})
-    return httpx.HTTPStatusError("boom", request=request, response=response)
+def _http_error(status: int, headers: dict | None = None) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("GET", "https://graph.microsoft.com/v1.0/me")
+    response = httpx2.Response(status, request=request, headers=headers or {})
+    return httpx2.HTTPStatusError("boom", request=request, response=response)
 
 
 class TestRetryability:

@@ -1,6 +1,6 @@
 """ms-graph-mcp — Microsoft Graph tool surface + MCP server (Streamable HTTP / stdio).
 
-``client.py`` holds the raw httpx helpers (graph_get / graph_post / graph_patch /
+``client.py`` holds the raw httpx2 helpers (graph_get / graph_post / graph_patch /
 graph_delete); one module per Graph domain (calendar, email, meetings, teams,
 files, people, directory, tasks, onenote) hosts the ``@tool`` adapters. Importing
 this package runs each domain module's ``@tool`` decorators so the adapters

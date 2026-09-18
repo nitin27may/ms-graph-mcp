@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from ms_graph_mcp.chats import (
@@ -45,10 +45,10 @@ from ms_graph_mcp.search import SearchEntity, SearchQueryInput, search_query
 _CTX = {"access_token": "tok"}
 
 
-def _http_error(status: int) -> httpx.HTTPStatusError:
-    request = httpx.Request("POST", "https://graph.microsoft.com/v1.0/x")
-    return httpx.HTTPStatusError(
-        "boom", request=request, response=httpx.Response(status, request=request)
+def _http_error(status: int) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("POST", "https://graph.microsoft.com/v1.0/x")
+    return httpx2.HTTPStatusError(
+        "boom", request=request, response=httpx2.Response(status, request=request)
     )
 
 

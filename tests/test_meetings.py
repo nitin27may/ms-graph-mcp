@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -39,11 +39,11 @@ AUTH_HEADER = f"Bearer {TOKEN}"
 
 
 def _make_response(status: int, body: dict | str) -> MagicMock:
-    """Build a MagicMock that looks like an httpx.Response."""
-    resp = MagicMock(spec=httpx.Response)
+    """Build a MagicMock that looks like an httpx2.Response."""
+    resp = MagicMock(spec=httpx2.Response)
     resp.status_code = status
     resp.is_success = 200 <= status < 300
-    # A real httpx.Response always carries headers; graph_try_get reads
+    # A real httpx2.Response always carries headers; graph_try_get reads
     # content-type off them to decide how to hand the body back.
     resp.headers = {"content-type": "application/json"}
     if isinstance(body, dict):
@@ -61,15 +61,15 @@ def _make_response(status: int, body: dict | str) -> MagicMock:
 class TestJoinUrlEncoding:
     """
     Verify that the OData filter value is correctly encoded when passed via
-    httpx params=.  Teams join URLs contain %3a, %40, %7b etc. which must be
+    httpx2 params=.  Teams join URLs contain %3a, %40, %7b etc. which must be
     double-encoded (%253a etc.) so the Graph API's single URL-decode step
     recovers the original percent-encoded chars before string comparison.
     """
 
-    def _build_request(self, join_url: str) -> httpx.Request:
-        """Build an httpx.Request as graph_meetings would, using params=."""
+    def _build_request(self, join_url: str) -> httpx2.Request:
+        """Build an httpx2.Request as graph_meetings would, using params=."""
         odata_safe = join_url.replace("'", "''")
-        return httpx.Request(
+        return httpx2.Request(
             "GET",
             "https://graph.microsoft.com/v1.0/me/onlineMeetings",
             params={"$filter": f"JoinWebUrl eq '{odata_safe}'", "$select": "id"},
@@ -111,7 +111,7 @@ class TestJoinUrlEncoding:
         """The $filter key must appear in the query string (encoded or raw)."""
         req = self._build_request(SAMPLE_JOIN_URL)
         raw_query = req.url.query.decode().lower()
-        # httpx may encode $ as %24 — both are valid
+        # httpx2 may encode $ as %24 — both are valid
         assert "filter" in raw_query, f"filter key missing from: {raw_query[:300]}"
 
     def test_select_key_present(self):
@@ -190,7 +190,7 @@ class TestGetMeetingsWithTranscripts:
                 return transcript_resp
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -233,7 +233,7 @@ class TestGetMeetingsWithTranscripts:
                 return transcript_resp
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -275,7 +275,7 @@ class TestGetMeetingsWithTranscripts:
                 return om_403
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -314,7 +314,7 @@ class TestGetMeetingsWithTranscripts:
                 return transcript_resp
             raise ValueError(f"Unexpected URL: {url_str}")
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -339,7 +339,7 @@ class TestGetMeetingsWithTranscripts:
         async def fake_get(url, **kwargs):
             return _make_response(500, {"error": {"code": "ServiceError"}})
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -371,7 +371,7 @@ class TestGetTranscriptByEventId:
 
         vtt_content = "WEBVTT\n\n1\n00:00:01.000 --> 00:00:03.000\nAlice: Hello world."
         transcript_list_resp = _make_response(200, {"value": [{"id": SAMPLE_TRANSCRIPT_ID}]})
-        content_resp = MagicMock(spec=httpx.Response)
+        content_resp = MagicMock(spec=httpx2.Response)
         content_resp.status_code = 200
         content_resp.text = vtt_content
         content_resp.is_success = True
@@ -385,7 +385,7 @@ class TestGetTranscriptByEventId:
                 return transcript_list_resp
             raise ValueError(f"Unexpected URL in fast-path test: {url_str}")
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -421,7 +421,7 @@ class TestGetTranscriptByEventId:
         transcript_list_data = {"value": [{"id": SAMPLE_TRANSCRIPT_ID}]}
         vtt = "WEBVTT\n\n1\n00:00:01.000 --> 00:00:02.000\nSpeaker: Test content."
 
-        # graph_get is used for the event lookup; httpx directly for the rest
+        # graph_get is used for the event lookup; httpx2 directly for the rest
         with patch("ms_graph_mcp.meetings.graph_get", new=AM(return_value=event_resp_data)):
 
             async def fake_get(url, **kwargs):
@@ -429,7 +429,7 @@ class TestGetTranscriptByEventId:
                 if "onlineMeetings" in url_str and "transcripts" not in url_str:
                     return _make_response(200, om_resp_data)
                 if "transcripts" in url_str and "content" in url_str:
-                    content = MagicMock(spec=httpx.Response)
+                    content = MagicMock(spec=httpx2.Response)
                     content.status_code = 200
                     content.text = vtt
                     content.is_success = True
@@ -439,7 +439,7 @@ class TestGetTranscriptByEventId:
                     return _make_response(200, transcript_list_data)
                 raise ValueError(f"Unexpected URL: {url_str}")
 
-            with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+            with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_client.get = fake_get
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -474,7 +474,7 @@ class TestGetTranscriptByEventId:
             async def fake_get(url, **kwargs):
                 return _make_response(403, {"error": {"code": "Forbidden"}})
 
-            with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+            with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
                 mock_client = AsyncMock()
                 mock_client.get = fake_get
                 mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -513,7 +513,7 @@ class TestGetTranscriptByEventId:
         async def fake_get(url, **kwargs):
             return _make_response(200, {"value": []})  # no transcripts
 
-        with patch("ms_graph_mcp.client.httpx.AsyncClient") as mock_client_cls:
+        with patch("ms_graph_mcp.client.httpx2.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = fake_get
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

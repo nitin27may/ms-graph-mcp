@@ -1,6 +1,6 @@
 """chat_search_messages no longer hides failures as empty results.
 
-The tool previously hand-rolled httpx and did `if resp.status_code != 200:
+The tool previously hand-rolled the HTTP client and did `if resp.status_code != 200:
 return []`. A permission problem, a throttle and a genuine no-match all looked
 identical to the model — so an agent lacking Chat.Read would report "no messages
 found" rather than "you do not have access", and the user would believe it.
@@ -10,17 +10,17 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 
 from ms_graph_mcp.teams import SearchTeamsMessagesInput, chat_search_messages
 
 _CTX = {"access_token": "tok"}
 
 
-def _http_error(status: int) -> httpx.HTTPStatusError:
-    request = httpx.Request("POST", "https://graph.microsoft.com/v1.0/search/query")
-    response = httpx.Response(status, request=request)
-    return httpx.HTTPStatusError("boom", request=request, response=response)
+def _http_error(status: int) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("POST", "https://graph.microsoft.com/v1.0/search/query")
+    response = httpx2.Response(status, request=request)
+    return httpx2.HTTPStatusError("boom", request=request, response=response)
 
 
 async def test_permission_failure_is_reported_not_disguised_as_no_results():
@@ -81,7 +81,7 @@ async def test_hits_are_flattened_out_of_the_search_envelope():
 
 
 async def test_search_goes_through_the_shared_client():
-    """Not raw httpx — that path lost the tracing span and the [Graph] logging."""
+    """Not raw httpx2 — that path lost the tracing span and the [Graph] logging."""
     with patch("ms_graph_mcp.teams.graph_post", new=AsyncMock(return_value={"value": []})) as post:
         await chat_search_messages(SearchTeamsMessagesInput(query="x", max_results=5), _CTX)
 

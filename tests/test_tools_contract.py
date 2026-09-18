@@ -136,7 +136,7 @@ class TestPackageLayout:
 
         root = Path(ms_graph_mcp.__path__[0]).parent.parent
         meta = tomllib.loads((root / "pyproject.toml").read_text())
-        # "httpx>=0.28,<1.0" -> "httpx"; "pyjwt[crypto]>=2.10" -> "pyjwt"
+        # "httpx2>=2.5.0,<3.0" -> "httpx2"; "pyjwt[crypto]>=2.10" -> "pyjwt"
         declared = {
             re.split(r"[\[><=!;\s]", dep)[0].replace("-", "_").lower()
             for dep in meta["project"]["dependencies"]

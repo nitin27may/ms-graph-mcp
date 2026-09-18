@@ -30,10 +30,6 @@ Adding all of 1–7 takes the surface past 100 tools, which is what makes the
 
 - **Sovereign clouds** — GCC High, DoD and 21Vianet. A few Graph and login endpoints are still
   hardcoded to the commercial cloud, so those tenants cannot use this at all today.
-- **`httpx` / `httpx2` consolidation.** `mcp` 2.0 runs on `httpx2`, a distribution separate from the
-  `httpx` the Graph client uses, so both are installed. Deliberately not bundled with the SDK
-  migration — an HTTP-stack swap and an SDK upgrade are two failure domains and do not belong in one
-  change. See the note in the `dependencies` block of `pyproject.toml`.
 - **A typecheck step.** There is no mypy or pyright configured, so "verified" currently means pytest
   and ruff. The package ships `py.typed` and is annotated throughout; nothing enforces that.
 

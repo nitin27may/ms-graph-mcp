@@ -246,7 +246,7 @@ async def list_drive_item_children(
     items.extend(page.get("value") or [])
     next_link = page.get("@odata.nextLink")
     # Graph returns absolute URLs in nextLink — graph_get only takes a
-    # relative path + params, so for paging we drop back to httpx
+    # relative path + params, so for paging we drop back to httpx2
     # directly. Most folders fit in one page; this branch is for the
     # rare oversize case.
     while next_link:

@@ -39,7 +39,7 @@ class GraphMcpConfig(BaseSettings):
         populate_by_name=True,
     )
 
-    # httpx TLS verification toggle (corporate proxy / Zscaler).
+    # httpx2 TLS verification toggle (corporate proxy / Zscaler).
     disable_ssl_verify: bool = Field(
         default=False,
         validation_alias=AliasChoices("GRAPH_MCP_DISABLE_SSL_VERIFY"),

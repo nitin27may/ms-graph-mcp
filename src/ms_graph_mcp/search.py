@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_post
@@ -119,7 +119,7 @@ async def search_query(params: SearchQueryInput, context: dict) -> dict:
     }
     try:
         data = await graph_post(token, "/search/query", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         # Name the scope for whichever type was asked for first — better than a
         # bare "the required permission" when several could apply.
         scope = _SCOPE_FOR.get(params.entity_types[0], "")

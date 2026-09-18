@@ -6,7 +6,7 @@ Guidance for Claude Code working in this repository.
 email, meetings, Teams chat, files, people, contacts, directory, tasks, OneNote and
 search, served over stdio or Streamable HTTP. Tool names are namespaced by Graph permission family (`mail_`, `files_`,
 `calendar_`, `meetings_`, `chat_`, `directory_`, `people_`, `tasks_`, `notes_`, `search_`).
-The Graph client is raw `httpx` by design: `msgraph-sdk` and `azure-identity` are
+The Graph client is raw `httpx2` by design: `msgraph-sdk` and `azure-identity` are
 deliberately **not** dependencies (see the note at the bottom of the `dependencies` block in
 `pyproject.toml`, and [ADR 0002](docs/adr/0002-raw-httpx-graph-client.md)).
 
@@ -129,7 +129,7 @@ These are tests, not preferences. An 85-tool surface only stays coherent if drif
   sources and are the case that most needs the differentiation.
 - **Errors come from `errors.py`, never ad-hoc dicts.** `scope_denied`, `throttled`, `not_found`,
   `conflict`, `invalid_arguments`, `upstream_error`, and `graph_error_response` to map an
-  `httpx.HTTPStatusError`. Every one carries `retryable`, which is what stops a model looping on a
+  `httpx2.HTTPStatusError`. Every one carries `retryable`, which is what stops a model looping on a
   403. Return them — never raise: a raised exception becomes a JSON-RPC protocol error, which
   clients are told *not* to feed back to the model.
 - **Renames keep the old name.** Pass `aliases=("old_name",)`. The registry indexes aliases
@@ -182,7 +182,7 @@ Extend those fixtures rather than mocking `verify_token`.
 
 ## Gotchas
 
-- **`client.py:_build_url` does not URL-encode `$` on purpose.** Switching to httpx `params=` breaks
+- **`client.py:_build_url` does not URL-encode `$` on purpose.** Switching to httpx2 `params=` breaks
   every OData query (`$filter`, `$select`, …), and over-quoting double-encodes `%3a` inside
   JoinWebUrl filter values. The safe-set is tuned to match how the Graph JS SDK passes OData.
 - **`graph_get()` reserves `headers=` out of `**params`.** Passing headers any other way encodes
@@ -200,9 +200,9 @@ Extend those fixtures rather than mocking `verify_token`.
 - **`streamable_http_app()` owns the app's lifespan** — it runs the session manager there. If you
   need your own lifespan, chain onto `application.router.lifespan_context`; replacing it means the
   transport never starts. See `app.py`.
-- **`mcp` 2.0 runs on `httpx2`, a distribution separate from `httpx`.** Both are installed: the SDK
-  uses `httpx2`, `client.py` uses `httpx`. Consolidating them is tracked separately — do not mix the
-  two in one module.
+- **There is one HTTP stack: `httpx2`.** The SDK and the Graph client share it, and `httpx` is not
+  a dependency. The import name is `httpx2`, so `import httpx` in `src/` fails
+  `test_package_imports_nothing_undeclared` rather than quietly adding a second stack back.
 - **Every third-party import must be declared in `pyproject.toml`.**
   `test_package_imports_nothing_undeclared` AST-walks the package and checks each import against
   the declared dependency list, so an undeclared one fails the build here rather than on a user's

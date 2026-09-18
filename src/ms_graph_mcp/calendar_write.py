@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_patch, graph_post, graph_post_no_content
@@ -174,7 +174,7 @@ async def calendar_create_event(params: CreateEventInput, context: dict) -> dict
         body["onlineMeetingProvider"] = "teamsForBusiness"
     try:
         created = await graph_post(token, "/me/events", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Calendars.ReadWrite", tool="calendar_create_event")
     return _slim_created_event(created)
 
@@ -210,7 +210,7 @@ async def calendar_update_event(params: UpdateEventInput, context: dict) -> dict
         return invalid_arguments("Nothing to update — supply at least one field to change.")
     try:
         updated = await graph_patch(token, f"/me/events/{event_id}", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Calendars.ReadWrite", tool="calendar_update_event")
     return _slim_created_event(updated)
 
@@ -233,7 +233,7 @@ async def calendar_cancel_event(params: CancelEventInput, context: dict) -> dict
             f"/me/events/{event_id}/cancel",
             {"Comment": params.comment} if params.comment else {},
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Calendars.ReadWrite", tool="calendar_cancel_event")
     return {"status": "cancelled", "event_id": event_id}
 
@@ -255,7 +255,7 @@ async def calendar_respond_to_event(params: RespondToEventInput, context: dict) 
         body["comment"] = params.comment
     try:
         await graph_post_no_content(token, f"/me/events/{event_id}/{params.response.value}", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(
             exc, scope="Calendars.ReadWrite", tool="calendar_respond_to_event"
         )
@@ -326,7 +326,7 @@ async def calendar_find_meeting_times(params: FindMeetingTimesInput, context: di
         }
     try:
         data = await graph_post(token, "/me/findMeetingTimes", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(
             exc, scope="Calendars.Read.Shared", tool="calendar_find_meeting_times"
         )
@@ -383,7 +383,7 @@ async def calendar_get_free_busy(params: GetFreeBusyInput, context: dict) -> dic
     }
     try:
         data = await graph_post(token, "/me/calendar/getSchedule", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Calendars.ReadBasic", tool="calendar_get_free_busy")
 
     return {

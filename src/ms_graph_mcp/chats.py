@@ -12,7 +12,7 @@ anything needing that must use change notifications instead.
 
 from __future__ import annotations
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_post
@@ -90,7 +90,7 @@ async def chat_list(params: ListChatsInput, context: dict) -> list[dict] | dict:
                 "$orderby": "lastMessagePreview/createdDateTime desc",
             },
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Chat.Read", tool="chat_list")
     return [
         {
@@ -122,7 +122,7 @@ async def chat_list_messages(params: ChatMessagesInput, context: dict) -> list[d
             f"/chats/{chat_id}/messages",
             **{"$top": min(max(params.max_results, 1), 50)},
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Chat.Read", tool="chat_list_messages")
     # System messages (joins, renames) carry no body and are noise to a model.
     return [
@@ -150,7 +150,7 @@ async def chat_send_message(params: SendChatMessageInput, context: dict) -> dict
             f"/chats/{chat_id}/messages",
             {"body": {"contentType": "html", "content": params.message_html}},
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="ChatMessage.Send", tool="chat_send_message")
     return {
         "status": "sent",
@@ -173,7 +173,7 @@ async def chat_list_members(params: ChatMembersInput, context: dict) -> list[dic
     chat_id = validate_graph_id(params.chat_id, "chat_id")
     try:
         data = await graph_get(token, f"/chats/{chat_id}/members")
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Chat.Read", tool="chat_list_members")
     return [
         {

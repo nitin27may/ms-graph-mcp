@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from ms_graph_mcp.allowlists import READ_TOOL_NAMES, WRITE_TOOL_NAMES
@@ -42,10 +42,10 @@ from ms_graph_mcp.context import current_request_context
 _CTX = {"access_token": "tok"}
 
 
-def _http_error(status: int) -> httpx.HTTPStatusError:
-    request = httpx.Request("POST", "https://graph.microsoft.com/v1.0/me/events")
-    return httpx.HTTPStatusError(
-        "boom", request=request, response=httpx.Response(status, request=request)
+def _http_error(status: int) -> httpx2.HTTPStatusError:
+    request = httpx2.Request("POST", "https://graph.microsoft.com/v1.0/me/events")
+    return httpx2.HTTPStatusError(
+        "boom", request=request, response=httpx2.Response(status, request=request)
     )
 
 

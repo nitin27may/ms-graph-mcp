@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-import httpx
+import httpx2
 from pydantic import BaseModel, Field
 
 from ms_graph_mcp.client import graph_get, graph_patch, graph_post
@@ -82,7 +82,7 @@ async def _planner_etag(token: str, task_id: str) -> str | None:
     """
     try:
         task = await graph_get(token, f"/planner/tasks/{task_id}")
-    except httpx.HTTPStatusError:
+    except httpx2.HTTPStatusError:
         return None
     return task.get("@odata.etag")
 
@@ -104,7 +104,7 @@ async def _patch_planner_task(token: str, task_id: str, body: dict, tool_name: s
             body,
             {"If-Match": etag, **_RETURN_REPRESENTATION},
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         status = getattr(getattr(exc, "response", None), "status_code", None)
         if status in (409, 412):
             return conflict(
@@ -157,7 +157,7 @@ async def tasks_complete_todo(params: CompleteTodoInput, context: dict) -> dict:
             f"/me/todo/lists/{list_id}/tasks/{task_id}",
             {"status": TodoStatus.completed.value},
         )
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Tasks.ReadWrite", tool="tasks_complete_todo")
     return _slim_todo(updated)
 
@@ -190,7 +190,7 @@ async def tasks_update_todo(params: UpdateTodoInput, context: dict) -> dict:
         return invalid_arguments("Nothing to update — supply at least one field to change.")
     try:
         updated = await graph_patch(token, f"/me/todo/lists/{list_id}/tasks/{task_id}", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Tasks.ReadWrite", tool="tasks_update_todo")
     return _slim_todo(updated)
 
@@ -256,7 +256,7 @@ async def tasks_create_planner(params: CreatePlannerTaskInput, context: dict) ->
         }
     try:
         created = await graph_post(token, "/planner/tasks", body)
-    except httpx.HTTPStatusError as exc:
+    except httpx2.HTTPStatusError as exc:
         return graph_error_response(exc, scope="Tasks.ReadWrite", tool="tasks_create_planner")
     return _slim_planner(created)
 

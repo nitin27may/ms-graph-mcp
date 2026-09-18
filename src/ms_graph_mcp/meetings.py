@@ -346,7 +346,7 @@ async def meetings_list_past(params: GetPastMeetingsInput, context: dict) -> lis
 async def meetings_get_from_join_url(params: GetOnlineMeetingFromEventInput, context: dict) -> dict:
     token = context["access_token"]
 
-    # Use params= so httpx percent-encodes the filter value properly.
+    # Use params= so httpx2 percent-encodes the filter value properly.
     # Teams join URLs contain %3a, %40 etc. which must be double-encoded (%253a)
     # so the Graph API's single URL-decode step restores them before string comparison.
     # This matches the TypeScript SDK's encodeURIComponent() behaviour.

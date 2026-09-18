@@ -133,7 +133,7 @@ def upstream_error(status: int | None, detail: str = "") -> GraphToolError:
 
 
 def graph_error_response(exc: Any, *, scope: str = "", tool: str = "") -> GraphToolError:
-    """Translate an ``httpx.HTTPStatusError`` into the right terminal error.
+    """Translate an ``httpx2.HTTPStatusError`` into the right terminal error.
 
     Centralised so the 403-and-429 mapping is written once rather than in every
     tool. Pass ``scope`` when the tool knows which permission it needs — that is

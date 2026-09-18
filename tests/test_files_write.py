@@ -1,7 +1,7 @@
 """OneDrive write helpers — sanitization + simple PUT + upload session +
 overwrite-in-place + 412 eTag handling.
 
-httpx is mocked at the AsyncClient boundary so no real Graph calls.
+httpx2 is mocked at the AsyncClient boundary so no real Graph calls.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 # ── sanitize_filename ──────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ def test_sanitize_caps_long_names_preserving_extension():
 
 
 def _mock_put_response(status: int, body: dict | None = None):
-    resp = MagicMock(spec=httpx.Response)
+    resp = MagicMock(spec=httpx2.Response)
     resp.status_code = status
     resp.is_success = 200 <= status < 300
     resp.text = "" if resp.is_success else "graph error body"
@@ -64,7 +64,7 @@ def _mock_put_response(status: int, body: dict | None = None):
 
 
 def _patch_async_client(resp):
-    """Build a patch target replacing httpx.AsyncClient context with a mock
+    """Build a patch target replacing httpx2.AsyncClient context with a mock
     whose .put returns the supplied response."""
     client = MagicMock()
     client.put = AsyncMock(return_value=resp)
@@ -94,7 +94,7 @@ def _put_result(status: int):
 
 
 def test_upload_simple_put_success():
-    """Simple upload now goes through client.py:graph_put_raw, not raw httpx."""
+    """Simple upload now goes through client.py:graph_put_raw, not raw httpx2."""
     from ms_graph_mcp.files_write import upload_file_to_drive
 
     with patch("ms_graph_mcp.files_write.graph_put_raw", new=AsyncMock()) as put:
@@ -170,7 +170,7 @@ def test_upload_large_file_uses_upload_session():
 
     with (
         patch("ms_graph_mcp.files_write.graph_post", side_effect=fake_post),
-        patch("ms_graph_mcp.files_write.httpx.AsyncClient", factory),
+        patch("ms_graph_mcp.files_write.httpx2.AsyncClient", factory),
     ):
         result = asyncio.run(
             upload_file_to_drive(
@@ -301,9 +301,9 @@ def test_ensure_folder_409_falls_back_to_lookup():
     """Pre-existing folder → 409 → GET by path → continue."""
     from ms_graph_mcp.files_write import ensure_folder_exists
 
-    response_409 = MagicMock(spec=httpx.Response)
+    response_409 = MagicMock(spec=httpx2.Response)
     response_409.status_code = 409
-    error_409 = httpx.HTTPStatusError("conflict", request=MagicMock(), response=response_409)
+    error_409 = httpx2.HTTPStatusError("conflict", request=MagicMock(), response=response_409)
 
     async def fake_post(_token, _path, _body):
         raise error_409
@@ -419,9 +419,9 @@ def test_ensure_folder_with_drive_id_409_uses_drives_get():
     """drive_id + 409 → GET path resolves via /drives/{id}/root:/…"""
     from ms_graph_mcp.files_write import ensure_folder_exists
 
-    response_409 = MagicMock(spec=httpx.Response)
+    response_409 = MagicMock(spec=httpx2.Response)
     response_409.status_code = 409
-    error_409 = httpx.HTTPStatusError("conflict", request=MagicMock(), response=response_409)
+    error_409 = httpx2.HTTPStatusError("conflict", request=MagicMock(), response=response_409)
 
     get_paths: list[str] = []
 

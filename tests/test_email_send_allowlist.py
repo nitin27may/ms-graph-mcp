@@ -90,9 +90,9 @@ class TestSendEmailTool:
     def test_allows_send_when_recipient_in_allowlist(self):
         """When every recipient is on the allowlist the tool proceeds to Graph.
 
-        Mocked at the client seam rather than at httpx: mail_send goes through
+        Mocked at the client seam rather than at httpx2: mail_send goes through
         ``graph_post_no_content`` because /me/sendMail answers 202 with an empty
-        body, and patching httpx here would only re-test the client module.
+        body, and patching httpx2 here would only re-test the client module.
         """
         captured: dict = {}
 
