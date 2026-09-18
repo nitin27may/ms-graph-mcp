@@ -75,6 +75,9 @@ belongs, because the server is a confidential client running somewhere you contr
 | Verify JWT signatures against JWKS | `GRAPH_MCP_JWT_VERIFY` | `true` |
 | Shared secret for machine callers | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) |
 | Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `false` |
+| Certificate (PEM) for the OBO exchange | `GRAPH_MCP_CLIENT_CERT_PATH` | `""` |
+| Passphrase, if the private key is encrypted | `GRAPH_MCP_CLIENT_CERT_PASSPHRASE` | `""` |
+| Federated token file (AKS workload identity) | `GRAPH_MCP_FEDERATED_TOKEN_FILE` / `AZURE_FEDERATED_TOKEN_FILE` | `""` |
 | Client secret, for the OBO exchange | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
 | Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
 | Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `https://graph.microsoft.com/.default` |
@@ -93,6 +96,36 @@ belongs, because the server is a confidential client running somewhere you contr
 > **Configuring `GRAPH_MCP_REQUIRED_SCOPES` forces signature verification on**, whatever
 > `GRAPH_MCP_JWT_VERIFY` says. A scope check over an unverified token is forgeable, and a gate that
 > can be bypassed by forging a claim is worse than no gate at all — it reads as protection.
+
+### Client credentials
+
+The server authenticates as itself for the OBO exchange. Three ways, tried in this order:
+
+| Credential | Setting | Use |
+|---|---|---|
+| Certificate | `GRAPH_MCP_CLIENT_CERT_PATH` | Production |
+| Federated identity | `GRAPH_MCP_FEDERATED_TOKEN_FILE` | Production on AKS (workload identity) |
+| Client secret | `GRAPH_MCP_CLIENT_SECRET` | Development |
+
+Microsoft's guidance is explicit that client secrets
+[shouldn't be used in production](https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow);
+prefer a federated credential with a managed identity, or a certificate. Starting with a secret logs
+a warning, but it still works — it is the only one of the three that works on a laptop.
+
+The certificate file is a **PEM bundle holding the private key and its certificate**. PKCS#12 is not
+read directly; convert it once:
+
+```bash
+openssl pkcs12 -in cert.pfx -out cert.pem -nodes
+```
+
+A rotated certificate needs a restart. A rotated federated token does not — the file is re-read on
+demand, which matters because AKS refreshes the projected token roughly hourly.
+
+**The server refuses to start** when `GRAPH_MCP_DOES_OBO` is on and no credential (or no tenant or
+client id) is configured. Failing at boot rather than on the first tool call is deliberate: the
+alternative is a deployment that passes its readiness probe, serves `tools/list`, and only breaks
+when a user tries to do something.
 
 ### Write authority
 

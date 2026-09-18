@@ -190,6 +190,43 @@ class GraphMcpConfig(BaseSettings):
         default="access_as_user.write",
         validation_alias=AliasChoices("GRAPH_MCP_WRITE_SCOPE_NAME"),
     )
+    # Path to a PEM bundle holding the private key *and* its certificate, used
+    # to authenticate this confidential client instead of a secret. Microsoft's
+    # guidance for production is explicit: use a certificate or a federated
+    # credential, not a client secret. PKCS#12 (.pfx) is not read directly —
+    # convert it once with
+    # `openssl pkcs12 -in file.pfx -out file.pem -nodes`.
+    client_cert_path: str = Field(
+        default="", validation_alias=AliasChoices("GRAPH_MCP_CLIENT_CERT_PATH")
+    )
+    client_cert_passphrase: str = Field(
+        default="", validation_alias=AliasChoices("GRAPH_MCP_CLIENT_CERT_PASSPHRASE")
+    )
+    # Path to a projected federated token (AKS workload identity / any FIC).
+    # Read on demand rather than at startup because the file is rotated — a
+    # value captured once works until it silently expires.
+    federated_token_file: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "GRAPH_MCP_FEDERATED_TOKEN_FILE", "AZURE_FEDERATED_TOKEN_FILE"
+        ),
+    )
+
+    @property
+    def credential_kind(self) -> str:
+        """Which client credential is in force: cert, federated, secret or none.
+
+        Precedence matches ``obo._credential``. Exposed separately so startup
+        validation and the deployment warning can reason about it without
+        building an MSAL app.
+        """
+        if self.client_cert_path:
+            return "certificate"
+        if self.federated_token_file:
+            return "federated"
+        if self.client_secret:
+            return "secret"
+        return ""
 
     @property
     def scopes_list(self) -> list[str]:
