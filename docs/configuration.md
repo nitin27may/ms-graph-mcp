@@ -78,6 +78,8 @@ belongs, because the server is a confidential client running somewhere you contr
 | Client secret, for the OBO exchange | `GRAPH_MCP_CLIENT_SECRET` / `AZURE_AD_CLIENT_SECRET` | `""` |
 | Audience to validate in OBO mode | `GRAPH_MCP_AUDIENCE` | derived from client id |
 | Graph scopes requested during OBO | `GRAPH_MCP_OBO_SCOPES` | `https://graph.microsoft.com/.default` |
+| Delegated scopes every caller must present | `GRAPH_MCP_REQUIRED_SCOPES` | `""` (no gate) |
+| Delegated scope authorising the write tier | `GRAPH_MCP_WRITE_SCOPE_NAME` | `access_as_user.write` |
 | HTTP port | `GRAPH_MCP_PORT` | `8094` |
 | Public URL, enabling OAuth discovery | `GRAPH_MCP_RESOURCE_URL` | `""` (discovery off) |
 | Additional accepted `Host` values | `GRAPH_MCP_ALLOWED_HOSTS` | `""` |
@@ -87,6 +89,27 @@ belongs, because the server is a confidential client running somewhere you contr
 > **`GRAPH_MCP_JWT_VERIFY` defaults on.** Turn it off only for a local run with no JWKS connectivity
 > — with it off, token signatures are not verified. There is deliberately no setting that skips
 > authentication altogether; see [ADR 0003](adr/0003-no-gateway-trust-mode.md).
+
+> **Configuring `GRAPH_MCP_REQUIRED_SCOPES` forces signature verification on**, whatever
+> `GRAPH_MCP_JWT_VERIFY` says. A scope check over an unverified token is forgeable, and a gate that
+> can be bypassed by forging a claim is worse than no gate at all — it reads as protection.
+
+### Write authority
+
+In the resource-server posture, reaching a write tool needs **both**:
+
+- `X-Write-Scope: true` on the request, and
+- the `GRAPH_MCP_WRITE_SCOPE_NAME` scope (`access_as_user.write` by default) in the token's `scp`.
+
+Expose that scope alongside `access_as_user` on the MCP's app registration. The header can only
+*narrow* — a client that holds write authority may still decline to use it — but it grants nothing
+on its own, because a header is something the caller sets for itself. A write tool refused for want
+of the scope returns `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`,
+which a conforming client uses to re-authorize and retry.
+
+The header deciding alone is **deprecated, with removal in `0.5.0`**. Nothing changes in the
+passthrough posture: there the token is audienced to Graph and its `scp` carries Graph permissions,
+not scopes this server defines, so there is nothing to check against.
 
 ### The two auth postures
 

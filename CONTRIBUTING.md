@@ -145,7 +145,8 @@ the package version reaches a `remove_in`**, comparing on the release tuple so e
 cycle — `0.4.0rc1` — already counts as due. Removal then becomes a deliberate edit rather than
 something dependent on memory, and pushing a date back is allowed as long as somebody decides to.
 
-Currently registered: the 51 pre-namespace tool aliases, removal due in `0.4.0`.
+Currently registered: the 51 pre-namespace tool aliases, removal due in `0.4.0`; and
+`X-Write-Scope` as the sole grant of write authority, removal due in `0.5.0`.
 
 ## Releasing
 

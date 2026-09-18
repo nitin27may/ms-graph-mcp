@@ -56,3 +56,20 @@ class AppOnlyError(AuthorizationError):
     """An app-only token was presented to a service that only allows users."""
 
     reason = "app_only_denied"
+
+
+class InsufficientScopeError(AuthorizationError):
+    """The token lacks a delegated scope the request needs.
+
+    Distinct from :class:`RoleError` because the remedy is different and a
+    client can act on it: OAuth defines ``insufficient_scope`` as a challenge,
+    so a conforming client re-authorizes for the named scope and retries. A
+    missing App Role is an administrative grant no client can obtain for itself.
+    """
+
+    reason = "insufficient_scope"
+
+    def __init__(self, message: str, *, scope: str = "") -> None:
+        super().__init__(message)
+        self.scope = scope
+        """The scope to name in the challenge, so the client knows what to ask for."""

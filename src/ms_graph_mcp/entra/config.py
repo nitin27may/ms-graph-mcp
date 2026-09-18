@@ -79,6 +79,14 @@ class AuthConfig(BaseSettings):
     # Comma-separated required App Roles. Empty = authenticate-only (no authz
     # gate). When set, the caller's `roles` claim must contain at least one.
     required_roles: str = Field(default="", validation_alias=AliasChoices("WG_AUTH_REQUIRED_ROLES"))
+    # Comma-separated required delegated scopes (the `scp` claim). Empty = no
+    # scope gate. When set, the caller's token must carry at least one — the
+    # same ANY-of semantics as required_roles. Distinct from roles: a scope is
+    # delegated authority the user consented to, a role is an administrative
+    # grant, and only the former can be resolved by a client re-authorizing.
+    required_scopes: str = Field(
+        default="", validation_alias=AliasChoices("WG_AUTH_REQUIRED_SCOPES")
+    )
     # Permit app-only (client-credentials) tokens — for future automation agents.
     allow_app_only: bool = Field(
         default=False, validation_alias=AliasChoices("WG_AUTH_ALLOW_APP_ONLY")
@@ -93,15 +101,21 @@ class AuthConfig(BaseSettings):
 
     @property
     def verify_signature(self) -> bool:
-        """Whether to RS256-verify. Forced ON when a role gate is configured —
-        a role check over an unverified token is forgeable."""
-        if self.required_roles_set:
+        """Whether to RS256-verify. Forced ON when a role or scope gate is
+        configured — an authorization check over an unverified token is
+        forgeable, and a gate that can be bypassed by forging a claim is worse
+        than no gate at all, because it reads as protection."""
+        if self.required_roles_set or self.required_scopes_set:
             return True
         return self.jwt_verify
 
     @property
     def required_roles_set(self) -> set[str]:
         return set(_csv(self.required_roles))
+
+    @property
+    def required_scopes_set(self) -> set[str]:
+        return set(_csv(self.required_scopes))
 
     @property
     def allowed_azp_set(self) -> set[str]:

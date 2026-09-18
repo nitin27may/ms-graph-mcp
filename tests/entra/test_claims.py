@@ -21,6 +21,7 @@ def test_delegated_user():
     assert p.roles == frozenset({"meeting-prep.user"})
     assert p.azp == "app"
     assert p.subject_id == "o1"
+    assert p.scopes == frozenset({"access_as_user"})
 
 
 def test_app_only_idtyp():
@@ -66,3 +67,21 @@ def test_missing_roles_is_empty():
 def test_upn_and_email_fallbacks():
     assert extract_principal({"upn": "U@b.com", "scp": "x"}).email == "u@b.com"
     assert extract_principal({"email": "E@b.com", "scp": "x"}).email == "e@b.com"
+
+
+def test_scopes_are_split_on_spaces():
+    """`scp` is a single space-delimited string, not a list, in Entra tokens."""
+    p = extract_principal({"preferred_username": "a@b.c", "scp": "access_as_user  Mail.Read "})
+    assert p.scopes == frozenset({"access_as_user", "Mail.Read"})
+
+
+def test_a_list_valued_scp_is_tolerated():
+    """Some issuers emit a list. Rejecting a caller over formatting helps nobody."""
+    p = extract_principal({"preferred_username": "a@b.c", "scp": ["a", "b"]})
+    assert p.scopes == frozenset({"a", "b"})
+
+
+def test_no_scp_means_no_scopes():
+    """Empty, not absent — a gate intersecting with it then fails closed."""
+    p = extract_principal({"idtyp": "app", "appid": "svc"})
+    assert p.scopes == frozenset()

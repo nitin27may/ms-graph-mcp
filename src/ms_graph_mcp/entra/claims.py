@@ -29,6 +29,11 @@ class Principal:
     # middleware._machine_principal sets it True; extract_principal (real
     # verified JWTs) never does.
     is_machine: bool = False
+    # Delegated scopes from the space-delimited `scp` claim. Defaulted rather
+    # than required so a hand-built Principal — the machine bypass, tests —
+    # keeps working: no scopes is the correct answer for a caller that
+    # presented no delegated token, and a gate over an empty set fails closed.
+    scopes: frozenset[str] = frozenset()
     raw: dict = field(default_factory=dict, repr=False)
 
 
@@ -44,6 +49,12 @@ def extract_principal(claims: dict) -> Principal:
     if isinstance(raw_roles, str):
         raw_roles = [raw_roles]
 
+    # `scp` is space-delimited in both v1 and v2 tokens. A list is tolerated
+    # because some issuers emit one, and being strict here would reject a
+    # legitimate caller over formatting.
+    raw_scopes = claims.get("scp") or ""
+    scope_names = raw_scopes if isinstance(raw_scopes, list) else str(raw_scopes).split()
+
     azp = (claims.get("azp") or claims.get("appid") or "").strip()
     subject_id = (claims.get("oid") or claims.get("sub") or "").strip()
     tenant_id = (claims.get("tid") or "").strip()
@@ -57,6 +68,7 @@ def extract_principal(claims: dict) -> Principal:
         email=email,
         tenant_id=tenant_id,
         roles=frozenset(raw_roles),
+        scopes=frozenset(str(scope).strip() for scope in scope_names if str(scope).strip()),
         azp=azp,
         is_app_only=is_app_only,
         raw=claims,

@@ -24,7 +24,7 @@ Graph, so a healthy response means the process is serving — not that Entra is 
 | Header | Purpose |
 |---|---|
 | `Authorization: Bearer <token>` | **Required.** Either a Microsoft Graph access token (validated as a real Entra JWT), or the configured shared secret for a machine caller. |
-| `X-Write-Scope: true` | Expose *and* permit the write tools for this request. |
+| `X-Write-Scope: true` | Expose *and* permit the write tools for this request. In the resource-server posture the token must **also** carry the `access_as_user.write` scope — the header can only narrow, never grant, and deciding alone is deprecated (removal in `0.5.0`). |
 | `X-Toolsets: mail,calendar` | Narrow the advertised tool surface for this request. Can only narrow — the startup value is a ceiling. |
 | `X-Entra-App-Token: <token>` | Optional app-only token for directory and group lookups that delegated permissions cannot cover tenant-wide. |
 | `X-Internal-Scope: true` | Expose the internal deterministic tier. Honoured **only** for the shared-secret machine principal — never for a user token. |

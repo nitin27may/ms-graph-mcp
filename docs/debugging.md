@@ -71,7 +71,7 @@ Each carries `retryable`, which is what stops a model looping on a 403.
 | `INVALID_ARGUMENTS` | Bad enum, malformed id, bad range | `true` | Fix the arguments and retry |
 | `UPSTREAM_ERROR` | Anything else; 5xx is retryable, 4xx is not | varies | Retry only if `retryable` |
 | `missing_graph_token` | No token reached dispatch | `false` | See below |
-| `write_scope_required` | Write tool without write scope | `false` | Set `GRAPH_MCP_WRITE_SCOPE` / `X-Write-Scope` |
+| `write_scope_required` | Write tool without write scope | `false` | Set `GRAPH_MCP_WRITE_SCOPE` (stdio) / `X-Write-Scope` + the write scope in the token (HTTP) |
 | `read_only_deployment` | `GRAPH_MCP_READ_ONLY` is on | `false` | Nothing the caller can do — this is the operator's setting |
 
 `SCOPE_DENIED` names the exact permission in both `message` and a `scope` field, so the model can

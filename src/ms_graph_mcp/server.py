@@ -225,8 +225,9 @@ async def dispatch_graph_tool(
         if not request_ctx.get("write_scope"):
             return _error_result(
                 "write_scope_required",
-                f"Tool '{name}' is a write tool. Caller must supply "
-                "X-Write-Scope: true header to enable writes.",
+                f"Tool '{name}' is a write tool. Over HTTP the caller needs the "
+                "write scope in its token and `X-Write-Scope: true` to opt in; "
+                "over stdio, set GRAPH_MCP_WRITE_SCOPE=true.",
             )
 
     context = current_request_context.get()

@@ -54,9 +54,9 @@ flowchart TD
         STDIO["stdio.py<br/>env → context"]
         HTTP["app.py — Starlette<br/>/mcp + /health"]
     end
-    AUTH["auth.py · GraphMcpAuthMiddleware<br/>delegates to entra/ (DOWNSTREAM_SERVICE)"]
+    AUTH["auth.py · GraphMcpAuthMiddleware<br/>delegates to entra/ (DOWNSTREAM_SERVICE)<br/>OBO exchange + scope challenges"]
     CTX["context.py · current_request_context<br/>access_token · user_email · write_scope<br/>internal_scope · entra_app_token"]
-    SRV["server.py<br/>list_graph_tools / dispatch_graph_tool<br/>tier gating + OBO exchange"]
+    SRV["server.py<br/>list_graph_tools / dispatch_graph_tool<br/>tier gating"]
     ALLOW["allowlists.py<br/>READ / WRITE / INTERNAL tuples"]
     REG["tooling.py · ToolRegistry<br/>@tool + Pydantic arg validation"]
     DOM["domain modules<br/>calendar · calendar_write · email · meetings · teams · chats<br/>files · files_write · people · contacts · directory<br/>tasks · tasks_write · onenote · search · internal"]
@@ -141,7 +141,7 @@ These are tests, not preferences. An 85-tool surface only stays coherent if drif
 | Tier | Count | Exposed when |
 |---|---:|---|
 | Read | 53 | always |
-| Write | 23 | `X-Write-Scope: true`, and only when `GRAPH_MCP_READ_ONLY` is off |
+| Write | 23 | `X-Write-Scope: true` **and** the write scope in `scp`, and only when `GRAPH_MCP_READ_ONLY` is off |
 | Internal | 9 | shared-secret machine principal **and** `X-Internal-Scope: true` |
 
 Security invariants — do not relax these to make something work:
@@ -174,6 +174,15 @@ Selected by `GRAPH_MCP_DOES_OBO` (`config.py`, `mcp_does_obo`):
 - **Resource server** (`mcp_does_obo=true`) — the inbound token is audienced to this MCP. Audience
   binding is the gate, so the azp check is dropped, and the **HTTP auth middleware** exchanges the
   token via `obo.py` (`acquire_token_on_behalf_of`, MSAL) before the request reaches dispatch.
+
+**Write authority comes from the token, not the header.** In the resource-server posture the rule
+is `X-Write-Scope: true` **AND** `access_as_user.write` in `scp` (`GRAPH_MCP_WRITE_SCOPE_NAME`), so
+the header can only ever narrow. A write tool refused for want of the scope gets a `403` with
+`WWW-Authenticate: Bearer error="insufficient_scope", scope="…"`, which a conforming client steps up
+on. The header deciding alone is deprecated, removal due in `0.5.0` (`deprecations.py`). Passthrough
+is unaffected — a Graph-audienced token's `scp` holds Graph permissions, not scopes this server
+defines. **The dispatch write gate stays regardless**: the middleware challenge tells an HTTP client
+*how* to fix a refusal, it does not replace the gate that also runs for stdio.
 
 **The exchange lives in `auth.py`, never in `dispatch_graph_tool`.** Moving it back would break two
 things at once. A Conditional Access claims challenge can only reach a client as a `401` +
