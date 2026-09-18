@@ -8,7 +8,51 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+### Changed — BREAKING (hosted deployments)
+
+- **Discovery advertises this server's own scopes, not Graph's.** In the resource-server posture
+  `scopes_supported` and the `scope=` challenge parameter now name
+  `api://<client-id>/access_as_user[.write]`. They previously carried `GRAPH_MCP_SCOPES` — the
+  *Graph* delegated scopes used for interactive stdio sign-in — which in the new posture tells a
+  discovering client to request a Graph token that this server then refuses. The `insufficient_scope`
+  challenge likewise names the fully qualified scope, since `scp` carries bare names but an
+  authorization request needs the form Entra recognises. Passthrough still advertises the Graph
+  scopes, which is correct there.
+
+- **The HTTP transport is an OAuth resource server by default.** `GRAPH_MCP_DOES_OBO` now defaults
+  to `true`: the server validates that the inbound token is audienced to **itself** and performs its
+  own on-behalf-of exchange for a Graph token. Previously it accepted a token audienced to
+  `https://graph.microsoft.com` — issued for *Graph*, not for this server — narrowed by an `azp`
+  check, which names who minted a token rather than who it is for. The MCP authorization
+  specification names that pattern as token passthrough and requires a server to reject tokens not
+  issued for it; Microsoft's OBO documentation says the same from the other side, and lists
+  inability to satisfy a Conditional Access step-up among the consequences. See
+  [ADR 0004](docs/adr/0004-resource-server-by-default.md).
+
+  **What breaks.** A hosted deployment that never set `GRAPH_MCP_DOES_OBO` will **refuse to start**
+  until it has a tenant id, client id and client credential — failing at boot rather than passing a
+  readiness probe and breaking on a user's first tool call. Callers must also present a token
+  audienced to this server. Either configure the credential ([the authentication guide](docs/authentication.md)
+  sets out the app-registration changes), or set `GRAPH_MCP_DOES_OBO=false` to keep the old
+  behaviour while migrating.
+
+  **What does not break.** stdio is untouched — a local client signs the user in and holds a Graph
+  token already, so there is nothing to exchange, and `GRAPH_MCP_DOES_OBO` has no meaning there.
+
 ### Added
+
+- **`GRAPH_MCP_ALLOWED_AZP`** — restrict which caller applications may reach the server. Empty by
+  default: audience binding already proves a token was issued for this server. An Entra Agent ID
+  token carries the agent identity's client id in `azp`, so this names the agents allowed in, as
+  defence in depth rather than as the gate.
+- **`docs/authentication.md`, an authentication guide** — why the posture changed, the two-hop OBO
+  chain, and the Entra configuration for both shapes people deploy: an MCP client connecting
+  directly (VS Code, MCP Inspector — including the fact that Entra implements no dynamic client
+  registration, and the pre-authorized-client answer to it), and a custom agent calling on a user's
+  behalf, with Entra Agent ID, `InheritDelegatedPermissions`, and when to use
+  `knownClientApplications` versus `preAuthorizedApplications`.
+- **`GRAPH_MCP_READ_SCOPE_NAME`** (default `access_as_user`), the read-tier counterpart to
+  `GRAPH_MCP_WRITE_SCOPE_NAME`. Advertised, not enforced — `GRAPH_MCP_REQUIRED_SCOPES` is the gate.
 
 - **Certificate and federated client credentials.** The OBO exchange no longer requires a client
   secret: `GRAPH_MCP_CLIENT_CERT_PATH` (a PEM bundle) and `GRAPH_MCP_FEDERATED_TOKEN_FILE` (AKS
@@ -43,6 +87,9 @@ change between minor versions; breaking changes are called out explicitly.
 
 ### Deprecated
 
+- **Token passthrough (`GRAPH_MCP_DOES_OBO=false`).** Still supported and still works; it warns at
+  startup and is removed in `1.0.0`. The removal date is deliberately distant — this is a
+  deployment's whole auth topology, not a header.
 - **`X-Write-Scope: true` as the sole grant of write authority**, replaced by the
   `access_as_user.write` scope in the token. Removal in `0.5.0`; registered in
   `src/ms_graph_mcp/deprecations.py`, so the build fails if it is forgotten.

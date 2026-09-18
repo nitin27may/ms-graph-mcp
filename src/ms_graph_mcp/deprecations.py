@@ -80,4 +80,22 @@ DEPRECATIONS: tuple[Deprecation, ...] = (
             "nothing to check against."
         ),
     ),
+    Deprecation(
+        what="token passthrough (`GRAPH_MCP_DOES_OBO=false`)",
+        replacement=(
+            "the resource-server posture (the default): a token audienced to this "
+            "server, which it exchanges for a Graph token itself"
+        ),
+        deprecated_in="0.4.0",
+        remove_in="1.0.0",
+        note=(
+            "Accepting a token minted for Microsoft Graph is the confused-deputy "
+            "anti-pattern the MCP authorization specification names, and it cannot "
+            "satisfy a Conditional Access step-up — the claims challenge has nowhere "
+            "to go. The removal date is deliberately distant rather than one minor "
+            "cycle: this is a deployment's whole auth topology, not a header, and the "
+            "platform this server was extracted from still runs it. It stays working "
+            "and warns at startup until 1.0.0."
+        ),
+    ),
 )

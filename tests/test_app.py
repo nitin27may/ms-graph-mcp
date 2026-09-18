@@ -9,8 +9,19 @@ from ms_graph_mcp.app import build_app
 from ms_graph_mcp.config import GraphMcpConfig
 
 
+def _cfg(**overrides) -> GraphMcpConfig:
+    """A startable config.
+
+    Resource-server is the default posture and refuses to start without a client
+    credential, so every app built here needs one — including the ones that only
+    care about `/health` or a 401.
+    """
+    base = {"_env_file": None, "tenant_id": "t", "client_id": "c", "client_secret": "s"}
+    return GraphMcpConfig(**{**base, **overrides})
+
+
 def test_health_reports_service_metadata():
-    with TestClient(build_app(GraphMcpConfig(shared_secret=""))) as client:
+    with TestClient(build_app(_cfg(shared_secret=""))) as client:
         resp = client.get("/health")
     assert resp.status_code == 200
     body = resp.json()
@@ -21,7 +32,7 @@ def test_health_reports_service_metadata():
 def test_mcp_endpoint_requires_a_token_when_secret_configured():
     # An unauthenticated request is rejected before the MCP transport
     # runs (no Bearer → 401).
-    app = build_app(GraphMcpConfig(shared_secret="s3cr3t"))
+    app = build_app(_cfg(shared_secret="s3cr3t"))
     with TestClient(app) as client:
         resp = client.post("/mcp")
     assert resp.status_code == 401
@@ -30,7 +41,7 @@ def test_mcp_endpoint_requires_a_token_when_secret_configured():
 def test_mcp_endpoint_requires_a_token_even_standalone():
     # The contract is now Authorization=Bearer on every call (gateway-friendly):
     # there is no "open when no secret" mode — a missing token is a 401.
-    app = build_app(GraphMcpConfig(shared_secret=""))
+    app = build_app(_cfg(shared_secret=""))
     with TestClient(app) as client:
         resp = client.post("/mcp")
     assert resp.status_code == 401
@@ -45,8 +56,7 @@ def test_the_transport_still_receives_the_body_the_middleware_read():
     an import error. Drive a real ``initialize`` through the assembled app so a
     regression shows up here rather than in production.
     """
-    cfg = GraphMcpConfig(
-        _env_file=None,
+    cfg = _cfg(
         shared_secret="s3cr3t",
         # TestClient sends Host: testserver, which the DNS-rebinding guard
         # rejects by default.

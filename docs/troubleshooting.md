@@ -16,6 +16,11 @@ once the server is running, see [debugging.md](debugging.md).
 | Client shows "server disconnected" | Run the same command in a terminal; startup errors go to stderr and the client usually hides them. |
 | Tools are missing from the list | `GRAPH_MCP_TOOLSETS` defaults to `core`. Teams chat, Planner, OneNote, transcripts and directory are not in it — name those profiles, or set `all`. |
 | Write tools are missing | They need `GRAPH_MCP_WRITE_SCOPE=true` *and* the matching scopes, and are absent entirely if `GRAPH_MCP_READ_ONLY` is set. |
+| `401` on a hosted call with a token that looks right | Check `aud`, not `azp`. The default posture needs a token audienced to **this server** (`api://<client id>`), not one for Graph. See [the authentication guide](authentication.md). |
+| `401` with `error="interaction_required"` and a `claims` value | Conditional Access wants a step-up. The client should satisfy the claims challenge and retry — this is the flow working. |
+| `403` with `error="insufficient_scope"` | A write tool was called without `access_as_user.write` in the token. Add the scope to the caller's permissions. |
+| `502` from a hosted tool call | This server's own client credential was rejected by Entra — check the certificate, federated credential or secret. |
+| Hosted server will not start | `GRAPH_MCP_DOES_OBO` is on (the default since 0.4.0) with no credential configured. The startup message names what is missing. |
 | `421 Misdirected Request` from a hosted deployment | `GRAPH_MCP_RESOURCE_URL` is not set, so the transport trusts only localhost. See [hosting.md](hosting.md#set-graph_mcp_resource_url-when-you-deploy-behind-a-proxy). |
 | `[SSL: CERTIFICATE_VERIFY_FAILED]` when calling Graph tools | A TLS-inspecting proxy is re-signing Graph traffic with a chain your Python/OpenSSL runtime does not trust. [See below](#ssl-certificate-verify-failures-behind-corporate-proxies). |
 

@@ -38,6 +38,12 @@ def _config(**overrides) -> GraphMcpConfig:
         "tenant_id": TENANT,
         "shared_secret": "s3cret",
         "resource_url": RESOURCE_URL,
+        # The default posture is resource-server, which refuses to start without
+        # a client credential. Discovery and host handling are orthogonal to the
+        # posture, so give it one rather than opting out of the default these
+        # tests would otherwise stop covering.
+        "client_id": "mcp-client-id",
+        "client_secret": "mcp-client-secret",
     }
     return GraphMcpConfig(**{**base, **overrides})
 
@@ -64,8 +70,26 @@ class TestMetadataDocument:
         assert body["resource"] == RESOURCE_URL
         assert body["authorization_servers"] == [f"https://login.microsoftonline.com/{TENANT}/v2.0"]
 
-    def test_it_advertises_the_configured_scopes(self, client):
+    def test_it_advertises_this_servers_own_scopes(self, client):
+        """Not the Graph scopes.
+
+        A conforming client reads this to decide what to ask the authorization
+        server for. As a resource server the caller needs a token audienced
+        *here*, so advertising `Mail.Read` would send it to request a Graph
+        token — which this server then refuses. That is the whole posture
+        failing at the first step, and silently.
+        """
         body = client.get(METADATA_PATH).json()
+        assert body["scopes_supported"] == [
+            "api://mcp-client-id/access_as_user",
+            "api://mcp-client-id/access_as_user.write",
+        ]
+
+    def test_passthrough_still_advertises_the_graph_scopes(self):
+        """There the caller is expected to arrive holding a Graph token."""
+        cfg = _config(mcp_does_obo=False)
+        with TestClient(build_app(cfg), base_url=ORIGIN) as c:
+            body = c.get(METADATA_PATH).json()
         assert "Mail.Read" in body["scopes_supported"]
 
     def test_the_authorization_server_follows_the_tenant(self):

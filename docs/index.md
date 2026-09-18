@@ -54,6 +54,7 @@ past that first run is documented here.
 | [Configuration](configuration.md) | Every environment variable, split by deployment shape. Local stdio and hosted HTTP use different authentication models. |
 | [Delegated permissions](permissions.md) | Every tool and the delegated permission it needs, plus copy-paste consent sets. Generated from the tool descriptions and checked in CI. |
 | [Hosting](hosting.md) | Streamable HTTP, per-request headers, Docker and GHCR, and the `421` that catches every first deployment. |
+| [Authentication](authentication.md) | Hosted deployments: why the server validates its own audience, and the Entra setup for an MCP client connecting directly (VS Code) and for a custom agent acting for a signed-in user. |
 | [Troubleshooting](troubleshooting.md) | Setup failures — Entra errors, Conditional Access, corporate TLS proxies. |
 | [Debugging](debugging.md) | Logs, error codes, and the auth failures people actually hit once it is running. |
 

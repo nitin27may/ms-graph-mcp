@@ -84,9 +84,24 @@ def test_get_config_is_cached_and_overridable():
 # ── Resource-server OBO posture (D4) ──────────────────────────────────────────
 
 
-def test_interim_auth_config_validates_graph_audience_and_azp():
-    # Default (mcp_does_obo off): accept the agent's OBO'd Graph token.
+def test_resource_server_is_the_default_posture():
+    """The default validates *our* audience, not Graph's.
+
+    A token audienced to Graph was issued for Graph, and accepting one here is
+    the confused-deputy anti-pattern the MCP authorization spec names. `azp`
+    only says who minted a token, not who it is for, so it was never an
+    adequate substitute.
+    """
     cfg = GraphMcpConfig(_env_file=None, client_id="our-app")
+    assert cfg.mcp_does_obo is True
+    ac = cfg.to_auth_config()
+    assert ac.audience_list == ["api://our-app", "our-app"]
+    assert GRAPH_AUDIENCE not in ac.audience_list
+
+
+def test_passthrough_is_opt_in_and_still_validates_graph_audience_and_azp():
+    # Explicitly opted into: accept the agent's already-OBO'd Graph token.
+    cfg = GraphMcpConfig(_env_file=None, mcp_does_obo=False, client_id="our-app")
     ac = cfg.to_auth_config()
     assert ac.audience == GRAPH_AUDIENCE
     assert ac.allowed_azp == "our-app"

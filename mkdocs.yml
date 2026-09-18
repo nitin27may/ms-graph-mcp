@@ -114,6 +114,7 @@ nav:
       - Delegated permissions: permissions.md
   - Running it:
       - Hosting: hosting.md
+      - Authentication guide: authentication.md
       - Troubleshooting: troubleshooting.md
       - Debugging: debugging.md
   - Reference:
@@ -126,6 +127,7 @@ nav:
       - ADR 0001 — src layout: adr/0001-src-layout.md
       - ADR 0002 — raw HTTP client: adr/0002-raw-httpx-graph-client.md
       - ADR 0003 — in-server token validation: adr/0003-no-gateway-trust-mode.md
+      - ADR 0004 — resource server by default: adr/0004-resource-server-by-default.md
 # Copyright footer text
 #
 # Identical on all doc sites by design, so the family reads as one property
