@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import json
+import time
 
 import pytest
+from starlette.applications import Starlette
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+from starlette.testclient import TestClient
 
 from ms_graph_mcp import obo
+from ms_graph_mcp.auth import GraphMcpAuthMiddleware
 from ms_graph_mcp.config import GraphMcpConfig, set_config
 from ms_graph_mcp.context import current_request_context
 
@@ -65,79 +72,193 @@ async def test_obo_requires_scopes():
         )
 
 
-# ── dispatch in OBO mode ──────────────────────────────────────────────────────
+# ── the exchange in the HTTP middleware ───────────────────────────────────────
+#
+# The exchange runs in the auth middleware rather than in dispatch, so that a
+# Conditional Access claims challenge can come back as a 401 the client acts on
+# — inside a tool result it would be sealed in an HTTP 200 and step-up could
+# never complete. These tests drive it through the middleware for that reason;
+# `tests/test_stdio_unaffected.py` guards the other half, that stdio can never
+# reach it.
+
+TENANT = "tenant-1"
 
 
-def _obo_config() -> GraphMcpConfig:
+def _obo_config(**overrides) -> GraphMcpConfig:
     return GraphMcpConfig(
         _env_file=None,
         mcp_does_obo=True,
-        tenant_id="t",
+        tenant_id=TENANT,
         client_id="c",
         client_secret="s",
+        jwt_verify=False,
+        **overrides,
     )
 
 
-async def test_dispatch_obo_mode_exchanges_user_token_for_graph_token(monkeypatch, call_tool):
-    set_config(_obo_config())
+def _mint() -> str:
+    """An unsigned user token — the signature path is covered in tests/entra/.
+
+    Audience is not asserted here on purpose: with ``jwt_verify=False`` only
+    ``exp`` and ``iss`` are checked, which keeps these tests about the exchange
+    rather than about validation.
+    """
+    payload = {
+        "iss": f"https://login.microsoftonline.com/{TENANT}/v2.0",
+        "aud": "api://c",
+        "exp": int(time.time()) + 3600,
+        "tid": TENANT,
+        "azp": "agent-app",
+        "preferred_username": "alice@example.com",
+        "scp": "access_as_user",
+    }
+    header = (
+        base64.urlsafe_b64encode(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
+        .rstrip(b"=")
+        .decode()
+    )
+    body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+    return f"{header}.{body}.sig"
+
+
+def _app(cfg: GraphMcpConfig) -> Starlette:
+    """A stand-in transport that reports the context the middleware built."""
+
+    async def mcp(request):
+        return JSONResponse({"context": current_request_context.get()})
+
+    app = Starlette(routes=[Route("/mcp", mcp, methods=["POST"])])
+    app.add_middleware(GraphMcpAuthMiddleware, config=cfg.to_auth_config())
+    return app
+
+
+def _call(client, tool: str = "people_get_my_profile", token: str | None = None):
+    return client.post(
+        "/mcp",
+        headers={"Authorization": f"Bearer {token or _mint()}"},
+        json={"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": tool}},
+    )
+
+
+def test_middleware_exchanges_the_user_token_for_a_graph_token(monkeypatch):
+    cfg = _obo_config()
+    set_config(cfg)
     captured: dict = {}
 
-    class _Reg:
-        # Stands in for ToolRegistry, so it honours the same interface.
-
-        def canonical_name(self, name):
-
-            return name
-
-        async def call(self, name, arguments_json, context):
-            captured["context"] = context
-            return {"ok": True, "tool": name}
-
-    monkeypatch.setattr("ms_graph_mcp.server.get_registry", lambda: _Reg())
-
     async def _fake_obo(user_token, scopes, **kwargs):
-        captured["obo_user_token"] = user_token
-        captured["obo_scopes"] = list(scopes)
+        captured["user_token"] = user_token
+        captured["scopes"] = list(scopes)
         return "graph-obo-token"
 
     monkeypatch.setattr("ms_graph_mcp.obo.acquire_token_on_behalf_of", _fake_obo)
 
-    cv = current_request_context.set({"access_token": "user-tok", "user_email": "u@x.com"})
-    try:
-        await call_tool("people_get_my_profile", {})
-    finally:
-        current_request_context.reset(cv)
+    token = _mint()
+    with TestClient(_app(cfg)) as client:
+        resp = _call(client, token=token)
 
-    # The tool ran with the OBO'd Graph token, not the inbound user token.
-    assert captured["context"]["access_token"] == "graph-obo-token"
-    assert captured["obo_user_token"] == "user-tok"
-    assert captured["obo_scopes"] == ["https://graph.microsoft.com/.default"]
+    assert resp.status_code == 200
+    # Downstream sees the exchanged Graph token, never the inbound assertion.
+    assert resp.json()["context"]["access_token"] == "graph-obo-token"
+    assert captured["user_token"] == token
+    assert captured["scopes"] == ["https://graph.microsoft.com/.default"]
 
 
-async def test_dispatch_obo_failure_returns_structured_error(monkeypatch, call_tool):
-    set_config(_obo_config())
+def test_a_claims_challenge_comes_back_as_a_401_the_client_can_act_on(monkeypatch):
+    """Conditional Access step-up. The whole point of moving the exchange."""
+    cfg = _obo_config()
+    set_config(cfg)
+    claims = '{"access_token":{"amr":{"values":["mfa"]}}}'
+
+    async def _needs_mfa(*a, **k):
+        raise obo.OboError(
+            "OBO exchange failed (interaction_required): AADSTS50076",
+            error_code="interaction_required",
+            claims=claims,
+            correlation_id="corr-1",
+        )
+
+    monkeypatch.setattr("ms_graph_mcp.obo.acquire_token_on_behalf_of", _needs_mfa)
+
+    with TestClient(_app(cfg)) as client:
+        resp = _call(client)
+
+    assert resp.status_code == 401
+    challenge = resp.headers["WWW-Authenticate"]
+    assert 'error="interaction_required"' in challenge
+    # The claims travel base64-encoded — raw JSON would not survive header parsing.
+    encoded = base64.b64encode(claims.encode()).decode()
+    assert f'claims="{encoded}"' in challenge
+
+
+def test_an_unfixable_rejection_is_a_502_not_a_401(monkeypatch):
+    """A 401 would send the client round a sign-in loop that cannot help."""
+    cfg = _obo_config()
+    set_config(cfg)
 
     async def _boom(*a, **k):
-        raise obo.OboError("OBO exchange failed (invalid_grant): nope")
+        raise obo.OboError("OBO exchange failed (invalid_grant): nope", error_code="invalid_grant")
 
     monkeypatch.setattr("ms_graph_mcp.obo.acquire_token_on_behalf_of", _boom)
 
-    cv = current_request_context.set({"access_token": "user-tok", "user_email": "u@x.com"})
-    try:
-        result = await call_tool("people_get_my_profile", {})
-    finally:
-        current_request_context.reset(cv)
+    with TestClient(_app(cfg)) as client:
+        resp = _call(client)
 
-    payload = json.loads(result.content[0].text)
-    assert payload["error"] == "obo_failed"
+    assert resp.status_code == 502
+    assert "invalid_grant" in resp.json()["error"]
+    assert "WWW-Authenticate" not in resp.headers
 
 
-async def test_dispatch_obo_mode_still_fails_closed_without_token(monkeypatch, call_tool):
+def test_only_tool_calls_are_exchanged(monkeypatch):
+    """`initialize` and `tools/list` need no Graph token.
+
+    Exchanging on every request would add a round-trip to the handshake and let
+    a Graph-side failure refuse a listing that does not touch Graph.
+    """
+    cfg = _obo_config()
+    set_config(cfg)
+
+    async def _must_not_run(*a, **k):
+        raise AssertionError("exchanged a token for a non-tools/call request")
+
+    monkeypatch.setattr("ms_graph_mcp.obo.acquire_token_on_behalf_of", _must_not_run)
+
+    token = _mint()
+    with TestClient(_app(cfg)) as client:
+        resp = client.post(
+            "/mcp",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["context"]["access_token"] == token
+
+
+def test_the_interim_posture_forwards_the_token_untouched(monkeypatch):
+    """`mcp_does_obo=False` means the caller already did the exchange."""
+    cfg = GraphMcpConfig(_env_file=None, mcp_does_obo=False, tenant_id=TENANT, jwt_verify=False)
+    set_config(cfg)
+
+    async def _must_not_run(*a, **k):
+        raise AssertionError("passthrough posture reached the OBO exchange")
+
+    monkeypatch.setattr("ms_graph_mcp.obo.acquire_token_on_behalf_of", _must_not_run)
+
+    token = _mint()
+    with TestClient(_app(cfg)) as client:
+        resp = _call(client, token=token)
+
+    assert resp.status_code == 200
+    assert resp.json()["context"]["access_token"] == token
+
+
+async def test_dispatch_still_fails_closed_without_token(call_tool_payload):
+    """Moving the exchange must not relax the guard it used to sit behind."""
     set_config(_obo_config())
-    cv = current_request_context.set({"access_token": "", "user_email": ""})
+    previous = current_request_context.get()
+    current_request_context.set({"access_token": "", "user_email": ""})
     try:
-        result = await call_tool("people_get_my_profile", {})
+        payload = await call_tool_payload("people_get_my_profile", {})
     finally:
-        current_request_context.reset(cv)
-    payload = json.loads(result.content[0].text)
+        current_request_context.set(previous)
     assert payload["error"] == "missing_graph_token"

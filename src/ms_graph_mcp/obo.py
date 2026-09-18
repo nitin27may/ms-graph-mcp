@@ -27,7 +27,41 @@ logger = logging.getLogger(__name__)
 
 
 class OboError(RuntimeError):
-    """Raised when the OBO exchange cannot be performed or is rejected."""
+    """Raised when the OBO exchange cannot be performed or is rejected.
+
+    Carries the parts of Entra's rejection a caller can act on. ``claims`` is the
+    one that matters: when Conditional Access demands a step-up (MFA, sign-in
+    frequency), Entra answers the exchange with a *claims challenge* rather than a
+    token, and the client must acquire a new token satisfying it. Dropping that
+    value leaves the user stuck in a loop with no way to complete the step-up, so
+    it is carried out to the transport rather than flattened into a log line.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: str = "",
+        suberror: str = "",
+        claims: str = "",
+        correlation_id: str = "",
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.suberror = suberror
+        self.claims = claims
+        self.correlation_id = correlation_id
+
+    @property
+    def requires_interaction(self) -> bool:
+        """Whether the user can resolve this by authenticating again.
+
+        A claims challenge is the definitive signal; ``interaction_required`` is
+        the error code Entra pairs it with. Anything else — a misconfigured
+        secret, an unauthorized client — is not something re-authentication
+        fixes, and telling the client to retry would just spin.
+        """
+        return bool(self.claims) or self.error_code == "interaction_required"
 
 
 # One long-lived ConfidentialClientApplication per (tenant, client) so MSAL's
@@ -89,14 +123,24 @@ async def acquire_token_on_behalf_of(
         error = result.get("error", "unknown")
         desc = result.get("error_description", "")
         correlation_id = result.get("correlation_id", "")
+        claims = result.get("claims", "") or ""
+        suberror = result.get("suberror", "") or ""
         logger.error(
-            "graph-mcp OBO failed: error=%s correlation_id=%s desc=%s scopes=%s",
+            "graph-mcp OBO failed: error=%s suberror=%s correlation_id=%s claims=%s desc=%s scopes=%s",
             error,
+            suberror,
             correlation_id,
+            bool(claims),
             desc[:300],
             scopes,
         )
-        raise OboError(f"OBO exchange failed ({error}): {desc[:200]}")
+        raise OboError(
+            f"OBO exchange failed ({error}): {desc[:200]}",
+            error_code=error,
+            suberror=suberror,
+            claims=claims,
+            correlation_id=correlation_id,
+        )
 
     return await loop.run_in_executor(None, functools.partial(_sync))
 

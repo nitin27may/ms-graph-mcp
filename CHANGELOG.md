@@ -8,8 +8,32 @@ change between minor versions; breaking changes are called out explicitly.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Conditional Access step-up can now complete.** When Entra answers the on-behalf-of exchange
+  with a claims challenge — MFA, or a sign-in-frequency policy — the server returns `401` with
+  `WWW-Authenticate: Bearer error="interaction_required", claims="<base64>"`, which is what makes a
+  conforming client acquire a new token and retry. Previously the challenge was flattened into an
+  `obo_failed` tool error inside an HTTP 200, where no client could act on it, so the step-up was
+  unresolvable. An exchange that re-authenticating cannot fix — a bad credential, an unauthorized
+  client — is now a `502` rather than a `401`, so clients are not sent round a sign-in loop for a
+  server-side problem.
+- **`GRAPH_MCP_DOES_OBO=true` no longer breaks the stdio transport.** The exchange lived in
+  `dispatch_graph_tool`, which both transports share, so setting the variable in an environment a
+  stdio client also read made every tool call fail: the interactive token is already a Graph token
+  and Entra will not redeem a token audienced elsewhere. The exchange now runs in the HTTP auth
+  middleware, so stdio has no code path to it however the server is configured.
+  `tests/test_stdio_unaffected.py` pins that, along with stdio being unaffected by every other
+  HTTP-only setting.
+- **`missing_graph_token` no longer names a header that does not exist.** The HTTP remedy still
+  said `X-Graph-Token`, removed some releases ago; it now says `Authorization: Bearer`.
+
 ### Changed
 
+- **The OBO exchange runs per request, not per tool call**, and only for `tools/call` —
+  `initialize` and `tools/list` need no Graph token and no longer pay for one. `OboError` carries
+  Entra's `claims`, `error_code`, `suberror` and `correlation_id` instead of flattening them into a
+  log line.
 - **One HTTP stack, not two.** The Graph client moves from `httpx` to `httpx2`, the distribution
   `mcp` 2.0 already depends on, so only one HTTP library is installed. `httpx` is gone from
   `dependencies`. No behaviour change: the two APIs are equivalent for everything `client.py` uses,

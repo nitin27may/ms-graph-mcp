@@ -172,8 +172,16 @@ Selected by `GRAPH_MCP_DOES_OBO` (`config.py`, `mcp_does_obo`):
 - **Interim (default)** — the caller forwards an already-OBO'd Graph token. Validated for the Graph
   audience plus `azp == our client_id`, so only OBO tokens minted by this registration are accepted.
 - **Resource server** (`mcp_does_obo=true`) — the inbound token is audienced to this MCP. Audience
-  binding is the gate, so the azp check is dropped, and `dispatch_graph_tool` exchanges the
-  token via `obo.py` (`acquire_token_on_behalf_of`, MSAL) before the tool runs.
+  binding is the gate, so the azp check is dropped, and the **HTTP auth middleware** exchanges the
+  token via `obo.py` (`acquire_token_on_behalf_of`, MSAL) before the request reaches dispatch.
+
+**The exchange lives in `auth.py`, never in `dispatch_graph_tool`.** Moving it back would break two
+things at once. A Conditional Access claims challenge can only reach a client as a `401` +
+`WWW-Authenticate`; a tool result is always an HTTP 200, so a challenge placed there is unreachable
+and MFA step-up can never complete. And dispatch is shared with stdio, where the token is already a
+Graph token — an exchange there breaks every stdio call, which is exactly the bug
+`tests/test_stdio_unaffected.py` now guards. Only `tools/call` requests are exchanged;
+`initialize` and `tools/list` need no Graph token.
 
 `src/ms_graph_mcp/entra/` is a vendored, self-contained auth toolkit running in
 `AuthMode.DOWNSTREAM_SERVICE`. It has its own `tests/entra/conftest.py` with a real generated RS256

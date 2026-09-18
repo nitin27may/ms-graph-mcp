@@ -249,34 +249,22 @@ async def dispatch_graph_tool(
             "Set GRAPH_MCP_CLIENT_ID to sign in interactively, or "
             "GRAPH_MCP_ACCESS_TOKEN to supply a token directly."
             if context.get("transport") == "stdio"
-            else "Supply the token in the X-Graph-Token header."
+            else "Supply the user's token in the Authorization: Bearer header."
         )
         return _error_result(
             "missing_graph_token",
             f"No Graph access token was supplied. {remedy}",
         )
 
-    # Resource-server OBO (D4): in OBO mode the inbound token is the *user* token
-    # audienced to this MCP — exchange it for a Microsoft Graph token before the
-    # tool runs. In the interim posture the agent already forwarded a Graph token,
-    # so this is a no-op. The exchange comes AFTER the missing-token guard so an
-    # absent token still fails closed.
-    cfg = get_config()
-    if cfg.mcp_does_obo:
-        from ms_graph_mcp.obo import OboError, acquire_token_on_behalf_of
-
-        try:
-            graph_token = await acquire_token_on_behalf_of(
-                context["access_token"],
-                cfg.obo_scopes_list,
-                tenant_id=cfg.tenant_id,
-                client_id=cfg.client_id,
-                client_secret=cfg.client_secret,
-            )
-        except OboError as exc:
-            return _error_result("obo_failed", f"graph-mcp OBO exchange failed: {exc}")
-        context = {**context, "access_token": graph_token}
-
+    # By this point ``access_token`` is a Microsoft Graph token whichever
+    # transport supplied it. In the resource-server posture the inbound token is
+    # audienced to this MCP and has to be exchanged first — that happens in the
+    # HTTP auth middleware (``auth.py``), not here, because a Conditional Access
+    # claims challenge has to come back as a 401 with a ``WWW-Authenticate``
+    # header and a tool result is always a 200. Keeping it out of this shared
+    # path is also what makes ``GRAPH_MCP_DOES_OBO`` meaningless over stdio,
+    # where the token is already a Graph token and an exchange breaks every call
+    # (``tests/test_stdio_unaffected.py``).
     result = await get_registry().call(name, json.dumps(arguments or {}), context)
     return _success_result(result)
 
