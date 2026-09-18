@@ -95,6 +95,52 @@ def _discovery_routes(cfg: GraphMcpConfig) -> list[Route]:
     )
 
 
+def _check_obo_credentials(cfg: GraphMcpConfig) -> None:
+    """Refuse to start a resource server that cannot perform its own exchange.
+
+    Deliberately at startup rather than on the first Graph call. Without this the
+    deployment looks healthy — ``/health`` answers, ``tools/list`` works, the
+    container passes its readiness probe — and only fails when a user runs a
+    tool, surfacing as a per-request error rather than as a bad deployment.
+
+    Scoped to the HTTP transport. ``stdio.main()`` never calls this: a stdio
+    session holds a Graph token already and performs no exchange, so an absent
+    client credential is not a misconfiguration there.
+    """
+    if not cfg.mcp_does_obo:
+        return
+
+    kind = cfg.credential_kind
+    if not kind or not cfg.tenant_id or not cfg.client_id:
+        missing = []
+        if not cfg.tenant_id:
+            missing.append("GRAPH_MCP_TENANT_ID")
+        if not cfg.client_id:
+            missing.append("GRAPH_MCP_CLIENT_ID")
+        if not kind:
+            missing.append(
+                "one of GRAPH_MCP_CLIENT_CERT_PATH / GRAPH_MCP_FEDERATED_TOKEN_FILE / "
+                "GRAPH_MCP_CLIENT_SECRET"
+            )
+        raise RuntimeError(
+            "GRAPH_MCP_DOES_OBO is on, so this server exchanges the caller's token "
+            f"for a Graph token itself — but {', '.join(missing)} is not set. Either "
+            "configure the credential or turn GRAPH_MCP_DOES_OBO off."
+        )
+
+    if kind == "secret":
+        # Microsoft's Agent ID guidance is explicit that secrets should not be
+        # used as client credentials in production. Warn rather than refuse —
+        # this is the only credential that works on a laptop.
+        logger.warning(
+            "ms-graph-mcp: authenticating with a client secret. For production use a "
+            "certificate (GRAPH_MCP_CLIENT_CERT_PATH) or a federated credential "
+            "(GRAPH_MCP_FEDERATED_TOKEN_FILE) instead."
+        )
+    else:
+        logger.info("ms-graph-mcp: client credential is a %s", kind)
+
+
 def build_app(
     cfg: GraphMcpConfig | None = None,
     *,
@@ -114,6 +160,7 @@ def build_app(
     if cfg is not None:
         set_config(cfg)
     active = get_config()
+    _check_obo_credentials(active)
 
     mcp_server = build_graph_mcp_server()
 

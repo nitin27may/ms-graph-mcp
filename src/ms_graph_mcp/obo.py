@@ -22,6 +22,7 @@ import asyncio
 import functools
 import logging
 import threading
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -64,23 +65,68 @@ class OboError(RuntimeError):
         return bool(self.claims) or self.error_code == "interaction_required"
 
 
-# One long-lived ConfidentialClientApplication per (tenant, client) so MSAL's
-# internal token cache survives across requests. Guarded for thread-safety since
-# the exchange runs in a thread-pool executor.
-_apps: dict[tuple[str, str], object] = {}
+# One long-lived ConfidentialClientApplication per (tenant, client, credential
+# kind) so MSAL's internal token cache survives across requests. The credential
+# kind is part of the key because the three kinds produce different apps; the
+# credential *value* is not, so rotating a certificate on disk needs a restart
+# (a federated token does not — see below). Guarded for thread-safety since the
+# exchange runs in a thread-pool executor.
+_apps: dict[tuple[str, str, str], object] = {}
 _apps_lock = threading.Lock()
 
 
-def _get_app(tenant_id: str, client_id: str, client_secret: str):
+def _credential(
+    client_secret: str = "",
+    cert_path: str = "",
+    cert_passphrase: str = "",
+    federated_token_file: str = "",
+) -> tuple[str, object]:
+    """The MSAL ``client_credential``, and a name for the kind in force.
+
+    Precedence is certificate → federated → secret, which is Microsoft's own
+    order of preference: their Agent ID guidance says client secrets "shouldn't
+    be used as client credentials in production environments". The secret stays
+    supported because it is the only thing that works on a developer laptop.
+
+    Returns ``("", None)`` when nothing is configured, so the caller can say so
+    plainly instead of handing MSAL a credential it will reject later.
+    """
+    if cert_path:
+        # MSAL wants a PEM holding the private key; passing the same bundle as
+        # `public_certificate` lets it derive an SHA-256 thumbprint itself
+        # (1.35.0+) rather than making the operator paste one from the portal.
+        pem = Path(cert_path).read_text()
+        credential: dict = {"private_key": pem, "public_certificate": pem}
+        if cert_passphrase:
+            credential["passphrase"] = cert_passphrase
+        return "certificate", credential
+
+    if federated_token_file:
+        # A *callable*, not the token's current contents. Projected service
+        # account tokens are rotated — AKS refreshes them roughly hourly — so a
+        # value read once at startup works, then silently stops working. MSAL
+        # invokes this only when it actually needs to go on the wire.
+        def _assertion() -> str:
+            return Path(federated_token_file).read_text().strip()
+
+        return "federated", {"client_assertion": _assertion}
+
+    if client_secret:
+        return "secret", client_secret
+
+    return "", None
+
+
+def _get_app(tenant_id: str, client_id: str, kind: str, credential: object):
     import msal
 
-    key = (tenant_id, client_id)
+    key = (tenant_id, client_id, kind)
     with _apps_lock:
         app = _apps.get(key)
         if app is None:
             app = msal.ConfidentialClientApplication(
                 client_id=client_id,
-                client_credential=client_secret,
+                client_credential=credential,
                 authority=f"https://login.microsoftonline.com/{tenant_id}",
             )
             _apps[key] = app
@@ -93,7 +139,10 @@ async def acquire_token_on_behalf_of(
     *,
     tenant_id: str,
     client_id: str,
-    client_secret: str,
+    client_secret: str = "",
+    cert_path: str = "",
+    cert_passphrase: str = "",
+    federated_token_file: str = "",
 ) -> str:
     """Exchange the inbound user token for a Microsoft Graph token via OBO.
 
@@ -103,8 +152,12 @@ async def acquire_token_on_behalf_of(
     """
     if not scopes:
         raise OboError("no OBO scopes configured")
-    if not (tenant_id and client_id and client_secret):
-        raise OboError("OBO not configured (tenant_id / client_id / client_secret required)")
+    kind, credential = _credential(client_secret, cert_path, cert_passphrase, federated_token_file)
+    if not (tenant_id and client_id and credential):
+        raise OboError(
+            "OBO not configured (tenant_id, client_id, and one of "
+            "client_secret / cert_path / federated_token_file required)"
+        )
 
     loop = asyncio.get_event_loop()
 
@@ -114,7 +167,7 @@ async def acquire_token_on_behalf_of(
         except ImportError as exc:  # pragma: no cover - msal is a declared dep
             raise OboError("msal is not installed — OBO unavailable") from exc
 
-        app = _get_app(tenant_id, client_id, client_secret)
+        app = _get_app(tenant_id, client_id, kind, credential)
         result = app.acquire_token_on_behalf_of(user_assertion=user_token, scopes=scopes)
         token = result.get("access_token")
         if token:
@@ -150,7 +203,10 @@ async def acquire_token_for_client(
     *,
     tenant_id: str,
     client_id: str,
-    client_secret: str,
+    client_secret: str = "",
+    cert_path: str = "",
+    cert_passphrase: str = "",
+    federated_token_file: str = "",
 ) -> str:
     """Acquire an app-only token via the client-credentials grant.
 
@@ -161,9 +217,11 @@ async def acquire_token_for_client(
     """
     if not scopes:
         raise OboError("no client-credentials scopes configured")
-    if not (tenant_id and client_id and client_secret):
+    kind, credential = _credential(client_secret, cert_path, cert_passphrase, federated_token_file)
+    if not (tenant_id and client_id and credential):
         raise OboError(
-            "client credentials not configured (tenant_id / client_id / client_secret required)"
+            "client credentials not configured (tenant_id, client_id, and one of "
+            "client_secret / cert_path / federated_token_file required)"
         )
 
     loop = asyncio.get_event_loop()
@@ -174,7 +232,7 @@ async def acquire_token_for_client(
         except ImportError as exc:  # pragma: no cover - msal is a declared dep
             raise OboError("msal is not installed — client credentials unavailable") from exc
 
-        app = _get_app(tenant_id, client_id, client_secret)
+        app = _get_app(tenant_id, client_id, kind, credential)
         result = app.acquire_token_for_client(scopes=scopes)
         token = result.get("access_token")
         if token:

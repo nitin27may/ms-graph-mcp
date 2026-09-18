@@ -205,6 +205,9 @@ async def dispatch_graph_tool(
                 tenant_id=cfg.tenant_id,
                 client_id=cfg.client_id,
                 client_secret=cfg.client_secret,
+                cert_path=cfg.client_cert_path,
+                cert_passphrase=cfg.client_cert_passphrase,
+                federated_token_file=cfg.federated_token_file,
             )
         except OboError as exc:
             return _error_result("app_only_token_failed", f"client-credentials failed: {exc}")

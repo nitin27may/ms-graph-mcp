@@ -38,7 +38,10 @@ dependencies = [
     "anyio>=4.0",
     # Confidential-client on-behalf-of / client-credentials exchange. Only used when
     # the server performs its own OBO (GRAPH_MCP_DOES_OBO=true); small and pure-Python.
-    "msal>=1.28.0",
+    # Floor is 1.35.0 because the certificate path relies on MSAL deriving an
+    # SHA-256 thumbprint from the public certificate rather than the operator
+    # pasting one in — on an older MSAL that silently becomes a rejected exchange.
+    "msal>=1.35.0",
     # NB: the Graph client is raw httpx2 by design — msgraph-sdk and azure-identity are
     # intentionally NOT dependencies.
 ]

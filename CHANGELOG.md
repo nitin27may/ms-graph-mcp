@@ -10,6 +10,19 @@ change between minor versions; breaking changes are called out explicitly.
 
 ### Added
 
+- **Certificate and federated client credentials.** The OBO exchange no longer requires a client
+  secret: `GRAPH_MCP_CLIENT_CERT_PATH` (a PEM bundle) and `GRAPH_MCP_FEDERATED_TOKEN_FILE` (AKS
+  workload identity, or any federated credential) take precedence over it, in that order. Microsoft's
+  Agent ID guidance is explicit that secrets should not be used as client credentials in production.
+  No new dependency — MSAL handles all three. A secret still works and now logs a warning at
+  startup, because it is the only one of the three that works on a laptop. The federated token is
+  read **on demand** rather than captured at startup: the projected file is rotated, so a value read
+  once works and then silently stops.
+- **The server refuses to start as a resource server it cannot be.** `GRAPH_MCP_DOES_OBO` with no
+  usable credential, tenant or client id now fails at boot, naming what is missing, instead of
+  surfacing on a user's first tool call — the old behaviour left a deployment passing its readiness
+  probe and serving `tools/list` while being unable to do anything. Scoped to `build_app()`; a stdio
+  session performs no exchange and is unaffected.
 - **Write authority can come from the token.** `Principal` now carries the delegated scopes from the
   `scp` claim, and in the resource-server posture the write tier requires
   `access_as_user.write` (`GRAPH_MCP_WRITE_SCOPE_NAME`) in the token as well as
