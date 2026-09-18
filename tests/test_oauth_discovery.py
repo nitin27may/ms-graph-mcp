@@ -38,6 +38,12 @@ def _config(**overrides) -> GraphMcpConfig:
         "tenant_id": TENANT,
         "shared_secret": "s3cret",
         "resource_url": RESOURCE_URL,
+        # The default posture is resource-server, which refuses to start without
+        # a client credential. Discovery and host handling are orthogonal to the
+        # posture, so give it one rather than opting out of the default these
+        # tests would otherwise stop covering.
+        "client_id": "mcp-client-id",
+        "client_secret": "mcp-client-secret",
     }
     return GraphMcpConfig(**{**base, **overrides})
 

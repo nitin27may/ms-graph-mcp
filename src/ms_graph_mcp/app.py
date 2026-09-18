@@ -108,6 +108,13 @@ def _check_obo_credentials(cfg: GraphMcpConfig) -> None:
     client credential is not a misconfiguration there.
     """
     if not cfg.mcp_does_obo:
+        logger.warning(
+            "ms-graph-mcp: GRAPH_MCP_DOES_OBO is off, so this server accepts tokens "
+            "audienced to Microsoft Graph rather than to itself. That is token "
+            "passthrough, which the MCP authorization specification names as an "
+            "anti-pattern, and it cannot satisfy a Conditional Access step-up. "
+            "Deprecated since 0.4.0; support is removed in 1.0.0."
+        )
         return
 
     kind = cfg.credential_kind

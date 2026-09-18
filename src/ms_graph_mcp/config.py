@@ -150,8 +150,13 @@ class GraphMcpConfig(BaseSettings):
     # receives a token audienced to ITSELF (single-reg: ``api://<client_id>``;
     # Path B: ``obo_audience``) and exchanges it for a Microsoft Graph token via
     # the OBO flow before calling Graph. This needs a confidential-client secret.
+    # Defaults TRUE: a server that accepts a token minted for *Graph* is the
+    # confused-deputy anti-pattern the MCP authorization spec names, and the
+    # `azp` check that used to narrow it says who minted a token, not who it is
+    # for. Setting this False is the passthrough posture — still supported, now
+    # explicit, and deprecated for removal in 1.0.0.
     mcp_does_obo: bool = Field(
-        default=False,
+        default=True,
         validation_alias=AliasChoices("GRAPH_MCP_DOES_OBO"),
     )
     # Confidential-client secret used for the OBO exchange (only needed when
@@ -202,6 +207,13 @@ class GraphMcpConfig(BaseSettings):
     client_cert_passphrase: str = Field(
         default="", validation_alias=AliasChoices("GRAPH_MCP_CLIENT_CERT_PASSPHRASE")
     )
+    # Comma-separated allowlist of caller application ids (the `azp` claim).
+    # Empty = any application whose token is correctly audienced to this server
+    # is accepted, which audience binding already makes safe. Set it to restrict
+    # *which* agents may call — an Entra Agent ID token carries the agent
+    # identity's client id here, so this is defence in depth on top of the
+    # audience, not a replacement for it.
+    allowed_azp: str = Field(default="", validation_alias=AliasChoices("GRAPH_MCP_ALLOWED_AZP"))
     # Path to a projected federated token (AKS workload identity / any FIC).
     # Read on demand rather than at startup because the file is rotated — a
     # value captured once works until it silently expires.
@@ -296,7 +308,9 @@ class GraphMcpConfig(BaseSettings):
                 client_id=self.client_id,
                 # Empty obo_audience → AuthConfig derives api://<client_id> + GUID.
                 audience=self.obo_audience,
-                allowed_azp="",
+                # Audience binding is the gate here; this is an optional extra
+                # restriction on which agent identities may call.
+                allowed_azp=self.allowed_azp,
                 required_scopes=self.required_scopes,
                 shared_secret=self.shared_secret,
             )

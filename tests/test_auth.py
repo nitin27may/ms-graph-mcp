@@ -1,9 +1,14 @@
 """Service auth (GraphMcpAuthMiddleware over ms_graph_mcp.entra, DOWNSTREAM).
 
-Tool calls present the OBO Graph token in Authorization (validated + azp-checked);
-no-user hydration calls present the shared secret (machine bypass). jwt_verify is
-off here (the signature path is covered by tests/entra/test_jwt_verify.py) so these
-focus on the middleware wiring: bypass, azp gate, and the request-context dict.
+Most of this file exercises the **passthrough** posture, where the caller
+presents a Graph token it already exchanged: validated + azp-checked, with the
+shared secret taking the machine bypass. jwt_verify is off there (the signature
+path is covered by tests/entra/test_jwt_verify.py) so those tests focus on the
+middleware wiring: bypass, azp gate, and the request-context dict.
+
+The class at the end covers the **default** posture, and needs a real signed
+token: audience validation only runs on the verified path, so the central claim
+— a Graph-audienced token is refused — cannot be asserted with an unsigned one.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from ms_graph_mcp.auth import GraphMcpAuthMiddleware
-from ms_graph_mcp.config import GRAPH_AUDIENCE, GraphMcpConfig
+from ms_graph_mcp.config import GRAPH_AUDIENCE, GraphMcpConfig, set_config
 from ms_graph_mcp.context import current_request_context
 
 SECRET = "graph-mcp-fleet-secret-long-enough-value"
@@ -27,9 +32,27 @@ CLIENT = "our-app-client-id"
 
 
 def _cfg():
-    return GraphMcpConfig(
-        shared_secret=SECRET, tenant_id=TENANT, client_id=CLIENT, jwt_verify=False
-    ).to_auth_config()
+    """The passthrough posture, explicitly.
+
+    These tests mint Graph-audienced tokens, which is what a caller presents
+    when it has already done the exchange itself. That is no longer the default
+    — see `TestTheDefaultPostureRejectsAGraphToken` below for the default — so
+    it has to be asked for.
+    """
+    cfg = GraphMcpConfig(
+        shared_secret=SECRET,
+        tenant_id=TENANT,
+        client_id=CLIENT,
+        jwt_verify=False,
+        mcp_does_obo=False,
+    )
+    # Publish it as the active config as well. `build_app()` does this in
+    # production, and the middleware reads posture-dependent settings
+    # (`mcp_does_obo`, `write_scope_name`) from there rather than from the
+    # entra AuthConfig, which does not carry them. Building one without the
+    # other lets the two disagree, which is a test artefact, not a real state.
+    set_config(cfg)
+    return cfg.to_auth_config()
 
 
 def _mint(**claims) -> str:
@@ -51,6 +74,10 @@ def _mint(**claims) -> str:
     )
     body = base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
     return f"{header}.{body}.sig"
+
+
+async def _context_route(request):
+    return JSONResponse({"context": current_request_context.get()})
 
 
 def _build_app() -> Starlette:
@@ -190,3 +217,69 @@ def test_internal_scope_false_without_header_even_for_machine_secret():
         resp = client.post("/mcp", headers={"Authorization": f"Bearer {SECRET}"})
     assert resp.status_code == 200
     assert resp.json()["context"]["internal_scope"] is False
+
+
+class TestTheDefaultPostureRejectsAGraphToken:
+    """The confused-deputy mitigation, asserted end to end.
+
+    A token whose `aud` is `https://graph.microsoft.com` was issued **for
+    Graph**, not for this server. The MCP authorization spec says a server must
+    validate that a token was issued specifically for it and must not accept
+    ones that were not; Microsoft says the same from the other side — do not
+    send a token anywhere except its intended audience. The old default did
+    exactly that and narrowed it with `azp`, which says who *minted* a token,
+    not who it is for.
+    """
+
+    def _resource_server_app(self, **overrides):
+        from tests.conftest import TOKEN_CLIENT, TOKEN_TENANT
+
+        cfg = GraphMcpConfig(
+            _env_file=None,
+            tenant_id=TOKEN_TENANT,
+            client_id=TOKEN_CLIENT,
+            client_secret="s",
+            **overrides,
+        )
+        assert cfg.mcp_does_obo is True, "this test is about the default posture"
+        set_config(cfg)
+        app = Starlette(routes=[Route("/mcp", _context_route, methods=["POST"])])
+        app.add_middleware(GraphMcpAuthMiddleware, config=cfg.to_auth_config())
+        return app
+
+    def test_a_graph_audienced_token_is_refused(self, make_token, patched_jwks):
+        token = make_token(aud=GRAPH_AUDIENCE)
+        with TestClient(self._resource_server_app()) as client:
+            resp = client.post("/mcp", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 401
+
+    def test_a_token_audienced_to_this_server_is_accepted(self, make_token, patched_jwks):
+        from tests.conftest import TOKEN_CLIENT
+
+        token = make_token(aud=f"api://{TOKEN_CLIENT}")
+        with TestClient(self._resource_server_app()) as client:
+            resp = client.post("/mcp", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        assert resp.json()["context"]["user_email"] == "alice@example.com"
+
+    def test_the_bare_client_id_audience_is_accepted_too(self, make_token, patched_jwks):
+        """v1-style tokens carry the bare GUID rather than the api:// URI."""
+        from tests.conftest import TOKEN_CLIENT
+
+        token = make_token(aud=TOKEN_CLIENT)
+        with TestClient(self._resource_server_app()) as client:
+            resp = client.post("/mcp", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+
+    def test_any_azp_is_accepted_because_the_audience_is_the_gate(self, make_token, patched_jwks):
+        """The azp allowlist is dropped here — audience binding replaces it.
+
+        `GRAPH_MCP_ALLOWED_AZP` can put it back as defence in depth; that is
+        covered in tests/test_agent_identity.py.
+        """
+        from tests.conftest import TOKEN_CLIENT
+
+        token = make_token(aud=f"api://{TOKEN_CLIENT}", azp="some-agent-identity")
+        with TestClient(self._resource_server_app()) as client:
+            resp = client.post("/mcp", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200

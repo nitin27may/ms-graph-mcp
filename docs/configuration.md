@@ -74,7 +74,8 @@ belongs, because the server is a confidential client running somewhere you contr
 |---|---|---|
 | Verify JWT signatures against JWKS | `GRAPH_MCP_JWT_VERIFY` | `true` |
 | Shared secret for machine callers | `GRAPH_MCP_SHARED_SECRET` | `""` (no gate) |
-| Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `false` |
+| Server performs its own OBO exchange | `GRAPH_MCP_DOES_OBO` | `true` |
+| Restrict which caller apps (`azp`) may call | `GRAPH_MCP_ALLOWED_AZP` | `""` (any) |
 | Certificate (PEM) for the OBO exchange | `GRAPH_MCP_CLIENT_CERT_PATH` | `""` |
 | Passphrase, if the private key is encrypted | `GRAPH_MCP_CLIENT_CERT_PASSPHRASE` | `""` |
 | Federated token file (AKS workload identity) | `GRAPH_MCP_FEDERATED_TOKEN_FILE` / `AZURE_FEDERATED_TOKEN_FILE` | `""` |
@@ -148,13 +149,24 @@ not scopes this server defines, so there is nothing to check against.
 
 Selected by `GRAPH_MCP_DOES_OBO`:
 
-- **Interim (default).** The caller forwards an already-OBO'd Graph token. It is validated for the
-  Graph audience *plus* `azp == our client_id`, so only OBO tokens minted by this registration are
-  accepted — a Graph token on its own is generic across apps and would otherwise be enough.
-- **Resource server** (`GRAPH_MCP_DOES_OBO=true`). The inbound token is audienced to this MCP.
-  Audience binding is the gate, so the `azp` check is dropped, and the server exchanges the token for
-  a Graph token via the on-behalf-of flow before the tool runs. This is the posture that needs
-  `GRAPH_MCP_CLIENT_SECRET`.
+- **Resource server (default).** The inbound token is audienced to *this server*. Audience binding
+  is the gate, and the server exchanges that token for a Graph token via the on-behalf-of flow
+  before the tool runs. This needs a tenant id, a client id and a client credential — **the server
+  refuses to start without them**. Setting up the app registrations is covered in
+  [agent-auth.md](agent-auth.md).
+- **Passthrough** (`GRAPH_MCP_DOES_OBO=false`). The caller forwards an already-OBO'd Graph token,
+  validated for the Graph audience *plus* `azp == our client_id`. **Deprecated since 0.4.0, removed
+  in 1.0.0**, and it warns at startup.
+
+Why the default changed: a token audienced to `https://graph.microsoft.com` was issued *for Graph*,
+not for this server, and accepting one is the confused-deputy anti-pattern the MCP authorization
+specification names. `azp` narrows who *minted* a token, never who it is for. Passthrough also
+cannot satisfy a Conditional Access step-up, because the claims challenge has nowhere to go. See
+[ADR 0004](adr/0004-resource-server-by-default.md).
+
+> **Upgrading from 0.3.x?** A hosted deployment that never set `GRAPH_MCP_DOES_OBO` will not start
+> until it has a credential. Either configure one — see [agent-auth.md](agent-auth.md) — or set
+> `GRAPH_MCP_DOES_OBO=false` to keep the old behaviour while you migrate. stdio is unaffected.
 
 ---
 

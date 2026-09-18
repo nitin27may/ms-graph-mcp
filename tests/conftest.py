@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import socket
+import time
 from typing import Any
 
+import jwt
 import mcp.types as types
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 from ms_graph_mcp.config import get_config, reset_config
+from ms_graph_mcp.entra import jwt_verify
 
 
 class EscapedToTheNetwork(RuntimeError):
@@ -112,3 +116,69 @@ def call_tool_payload(call_tool):
         return json.loads(result.content[0].text)
 
     return _payload
+
+
+# ── Signed Entra tokens ───────────────────────────────────────────────────────
+TOKEN_TENANT = "tenant-123"
+TOKEN_CLIENT = "client-abc"
+TOKEN_ISS_V2 = f"https://login.microsoftonline.com/{TOKEN_TENANT}/v2.0"
+GRAPH_AUD = "https://graph.microsoft.com"
+
+# A real RS256 keypair and a patched JWKS client, so the actual `jwt.decode`
+# path runs without touching the network. These live here rather than under
+# tests/entra/ because the posture tests at the `build_app()` level need real
+# signed tokens too: audience validation only happens on the verified path, so
+# "a Graph-audienced token is rejected" cannot be asserted with an unsigned one.
+
+
+@pytest.fixture(scope="session")
+def rsa_keypair():
+    priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return priv, priv.public_key()
+
+
+@pytest.fixture
+def make_token(rsa_keypair):
+    priv, _pub = rsa_keypair
+
+    def _make(remove: tuple[str, ...] = (), **overrides) -> str:
+        now = int(time.time())
+        payload = {
+            "iss": TOKEN_ISS_V2,
+            "aud": f"api://{TOKEN_CLIENT}",
+            "exp": now + 3600,
+            "iat": now,
+            "nbf": now,
+            "tid": TOKEN_TENANT,
+            "oid": "user-oid-1",
+            "preferred_username": "alice@example.com",
+            "azp": TOKEN_CLIENT,
+            "scp": "access_as_user",
+            "roles": ["meeting-prep.user"],
+        }
+        payload.update(overrides)
+        for key in remove:
+            payload.pop(key, None)
+        return jwt.encode(payload, priv, algorithm="RS256", headers={"kid": "test-key"})
+
+    return _make
+
+
+@pytest.fixture
+def patched_jwks(rsa_keypair, monkeypatch):
+    """Make jwt_verify resolve the signing key to our generated public key."""
+    _priv, pub = rsa_keypair
+
+    class _Key:
+        def __init__(self, key):
+            self.key = key
+
+    class _Client:
+        def __init__(self, *a, **k):
+            pass
+
+        def get_signing_key_from_jwt(self, token):
+            return _Key(pub)
+
+    monkeypatch.setattr(jwt_verify, "get_jwks_client", lambda url, lifespan=3600: _Client())
+    return pub

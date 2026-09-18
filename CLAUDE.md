@@ -169,11 +169,14 @@ Security invariants — do not relax these to make something work:
 
 Selected by `GRAPH_MCP_DOES_OBO` (`config.py`, `mcp_does_obo`):
 
-- **Interim (default)** — the caller forwards an already-OBO'd Graph token. Validated for the Graph
-  audience plus `azp == our client_id`, so only OBO tokens minted by this registration are accepted.
-- **Resource server** (`mcp_does_obo=true`) — the inbound token is audienced to this MCP. Audience
-  binding is the gate, so the azp check is dropped, and the **HTTP auth middleware** exchanges the
-  token via `obo.py` (`acquire_token_on_behalf_of`, MSAL) before the request reaches dispatch.
+- **Resource server (default)** — the inbound token is audienced to this MCP. Audience binding is
+  the gate, and the **HTTP auth middleware** exchanges the token via `obo.py`
+  (`acquire_token_on_behalf_of`, MSAL) before the request reaches dispatch. `build_app()` refuses to
+  start without a tenant id, client id and client credential. See ADR 0004 and `docs/agent-auth.md`.
+- **Passthrough** (`mcp_does_obo=false`) — the caller forwards an already-OBO'd Graph token,
+  validated for the Graph audience plus `azp == our client_id`. Deprecated in 0.4.0, removed in
+  1.0.0; warns at startup. A token audienced to Graph was issued *for Graph*, and `azp` says who
+  minted a token, not who it is for.
 
 **Write authority comes from the token, not the header.** In the resource-server posture the rule
 is `X-Write-Scope: true` **AND** `access_as_user.write` in `scp` (`GRAPH_MCP_WRITE_SCOPE_NAME`), so
