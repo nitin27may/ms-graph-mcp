@@ -41,6 +41,30 @@ class TestValidateGraphId:
         assert validate_graph_id("0-AEFA61C7F4C45A8F!187") == "0-AEFA61C7F4C45A8F!187"
         assert validate_graph_id("AEFA61C7F4C45A8F!187") == "AEFA61C7F4C45A8F!187"
 
+    def test_strips_surrounding_quotes(self):
+        # Callers are frequently LLMs, and the rejection below used to render the
+        # value with !r -- so the error displayed the id inside single quotes and
+        # the next attempt copied them in, failing again for a different reason.
+        assert validate_graph_id("'0-AEFA61C7F4C45A8F!187'") == "0-AEFA61C7F4C45A8F!187"
+        assert validate_graph_id('"0-AEFA61C7F4C45A8F!187"') == "0-AEFA61C7F4C45A8F!187"
+        assert validate_graph_id("  0-AEFA61C7F4C45A8F!187  ") == "0-AEFA61C7F4C45A8F!187"
+
+    def test_quotes_are_stripped_not_permitted(self):
+        # A quote anywhere but the ends is still a rejection, and stripping is
+        # not a way round the traversal check.
+        with pytest.raises(ValueError):
+            validate_graph_id("abc'def")
+        with pytest.raises(ValueError, match="Invalid Graph API ID"):
+            validate_graph_id("'../../etc/passwd'")
+
+    def test_error_does_not_quote_the_value(self):
+        # The message must not show the id wrapped in quotes: that is what a
+        # caller copies back.
+        with pytest.raises(ValueError) as excinfo:
+            validate_graph_id("bad id")
+        assert "'bad id'" not in str(excinfo.value)
+        assert "unquoted" in str(excinfo.value)
+
     def test_rejects_path_traversal(self):
         with pytest.raises(ValueError, match="Invalid Graph API ID"):
             validate_graph_id("../../etc/passwd")

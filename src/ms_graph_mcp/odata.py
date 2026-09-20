@@ -34,12 +34,28 @@ def escape_odata_string(value: str) -> str:
 def validate_graph_id(value: str, param_name: str = "id") -> str:
     """Validate that *value* looks like a Microsoft Graph object ID.
 
+    Surrounding whitespace and one matching pair of quotes are stripped first.
+    Callers are frequently LLMs, and an id arrives quoted often enough to be
+    worth accepting -- all the more so because the rejection below used to
+    render the value with ``!r``, so the error itself displayed the id inside
+    single quotes and the next attempt copied them in. Stripping ends that
+    loop; the quotes are removed, not permitted, so the character class stays
+    as strict as it was.
+
     Raises ``ValueError`` if the value contains characters that could be
     used for path traversal or injection.
     """
-    if not _GRAPH_ID_RE.match(value) or ".." in value:
-        raise ValueError(f"Invalid Graph API ID for {param_name}: {value!r}")
-    return value
+    cleaned = value.strip()
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in "'\"":
+        cleaned = cleaned[1:-1].strip()
+    if not _GRAPH_ID_RE.match(cleaned) or ".." in cleaned:
+        # Deliberately NOT ``!r``: quoting the value here is what taught a
+        # caller to send it quoted. Say what is allowed instead.
+        raise ValueError(
+            f"Invalid Graph API ID for {param_name}: {cleaned} "
+            "(allowed: letters, digits and - _ . = + / !, sent unquoted)"
+        )
+    return cleaned
 
 
 def validate_mail_folder(value: str) -> str:
