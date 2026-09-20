@@ -34,6 +34,13 @@ class TestValidateGraphId:
     def test_valid_base64(self):
         assert validate_graph_id("AAMkAGE2OGUwY=") == "AAMkAGE2OGUwY="
 
+    def test_valid_consumer_onenote_id(self):
+        # Personal (consumer) Microsoft accounts put "!" in every OneDrive and
+        # OneNote id. notes_list_sections returns these, so notes_list_pages has
+        # to accept them -- otherwise OneNote is unreachable on such an account.
+        assert validate_graph_id("0-AEFA61C7F4C45A8F!187") == "0-AEFA61C7F4C45A8F!187"
+        assert validate_graph_id("AEFA61C7F4C45A8F!187") == "AEFA61C7F4C45A8F!187"
+
     def test_rejects_path_traversal(self):
         with pytest.raises(ValueError, match="Invalid Graph API ID"):
             validate_graph_id("../../etc/passwd")
@@ -45,6 +52,11 @@ class TestValidateGraphId:
     def test_rejects_odata_injection(self):
         with pytest.raises(ValueError):
             validate_graph_id("') or 1 eq 1 --")
+
+    def test_rejects_traversal_even_with_bang(self):
+        # "!" is allowed, but it does not become a way round the ".." check.
+        with pytest.raises(ValueError, match="Invalid Graph API ID"):
+            validate_graph_id("a!../../etc/passwd")
 
 
 class TestValidateMailFolder:

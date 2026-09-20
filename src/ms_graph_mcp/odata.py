@@ -5,8 +5,15 @@ from __future__ import annotations
 import re
 
 # Graph API object IDs are alphanumeric with hyphens, underscores, dots,
-# equals, plus, and forward-slash (base64 segments).
-_GRAPH_ID_RE = re.compile(r"^[a-zA-Z0-9\-_\.=+/]+$")
+# equals, plus, forward-slash (base64 segments), and "!".
+#
+# "!" is what every consumer (personal Microsoft account) OneDrive and OneNote
+# id contains -- "0-AEFA61C7F4C45A8F!187" for a OneNote section, "AEFA61C7F4C45A8F!187"
+# for the drive item behind it. Without it, notes_list_sections happily returns
+# those ids and notes_list_pages then refuses every one of them, so OneNote is
+# unreachable on a personal account. "!" is not a path separator and ".." is
+# rejected separately below, so accepting it does not widen the traversal surface.
+_GRAPH_ID_RE = re.compile(r"^[a-zA-Z0-9\-_\.=+/!]+$")
 
 # Allowed mail-folder slugs for the /mailFolders/{slug} path segment.
 _VALID_FOLDERS = frozenset({"inbox", "sentitems", "drafts", "deleteditems", "junkemail", "all"})
