@@ -22,6 +22,19 @@ change between minor versions; breaking changes are called out explicitly.
   `ms_graph_mcp.client.httpx2.AsyncClient`. The `_no_network` guard stays as enforcement rather than
   as the only line of defence.
 
+### Fixed
+
+- **OneNote is reachable on personal (consumer) Microsoft accounts.** `validate_graph_id` rejected
+  `!`, which every consumer OneDrive/OneNote id contains (e.g. `0-AEFA61C7F4C45A8F!187`). Section
+  and page ids returned by `notes_list_sections` were bouncing straight back out of
+  `notes_list_pages`. The `..` traversal check still runs on the accepted value, so this does not
+  widen the traversal surface. (#63, thanks @veeragoni)
+- **`validate_graph_id` strips surrounding whitespace and one matching pair of quotes before
+  validating.** The rejection message used to render the id with `!r`, so a caller that got a
+  rejection saw the id back inside quotes and resubmitted it quoted — failing again for a different
+  reason. The message no longer quotes the value, and a wrapped id is unwrapped once rather than
+  rejected outright. (#63)
+
 ## [0.3.0] - 2026-08-20
 
 ### Added
