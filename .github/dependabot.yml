@@ -9,9 +9,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
-      # Patch and minor bumps of the dev toolchain are noise individually.
-      dev-tooling:
-        patterns: ["ruff", "pytest*"]
+      uv-minor-patch:
         update-types: ["minor", "patch"]
     ignore:
       # mcp, starlette and pydantic majors change the server's public
@@ -30,3 +28,17 @@ updates:
       day: monday
     commit-message:
       prefix: "chore(ci)"
+    groups:
+      actions-minor-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(docker)"
+    groups:
+      docker-minor-patch:
+        update-types: ["minor", "patch"]
