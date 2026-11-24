@@ -40,7 +40,7 @@ protocol revision.
 what lets `tests/test_config.py` and `tests/entra/test_config.py` coexist without `__init__.py`.
 
 There is no typecheck step (no mypy/pyright configured), so "verified" here means pytest plus ruff,
-both green. CI (`.github/workflows/ci.yml`) runs exactly that on Python 3.12 and 3.13, then builds
+both green. CI (`.github/workflows/ci.yml`) runs exactly that on Python 3.12, 3.13 and 3.14, then builds
 the wheel, installs it into a clean venv, and resolves the tool allowlists from it — so a module
 missing from the wheel fails the PR rather than the release.
 

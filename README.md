@@ -6,7 +6,7 @@
 [![Release](https://img.shields.io/github/v/release/nitin27may/ms-graph-mcp)](https://github.com/nitin27may/ms-graph-mcp/releases/latest)
 [![Docs](https://img.shields.io/badge/docs-nitinksingh.com-0f766e)](https://nitinksingh.com/ms-graph-mcp/)
 [![CI](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/nitin27may/ms-graph-mcp/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13-blue)](https://pypi.org/project/ms-graph-mcp/)
+[![Python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](https://pypi.org/project/ms-graph-mcp/)
 [![Container](https://img.shields.io/badge/ghcr.io-ms--graph--mcp-blue)](https://github.com/nitin27may/ms-graph-mcp/pkgs/container/ms-graph-mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/nitin27may/ms-graph-mcp/blob/main/LICENSE)
 [![MCP](https://img.shields.io/badge/MCP-server-orange)](https://modelcontextprotocol.io)
@@ -234,7 +234,7 @@ npx @modelcontextprotocol/inspector \
   -e GRAPH_MCP_TENANT_ID=<directory-tenant-id>
 ```
 
-Needs Node 22.19+. It opens a browser UI where you can list tools and call them by hand — worth
+Needs Node 26. It opens a browser UI where you can list tools and call them by hand — worth
 doing before blaming your client. There is a scriptable `--cli` mode too; see
 [docs/testing.md](https://github.com/nitin27may/ms-graph-mcp/blob/main/docs/testing.md).
 
