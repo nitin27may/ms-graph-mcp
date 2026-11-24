@@ -18,7 +18,7 @@ uv run ruff format .       # CI runs --check, so an unformatted tree fails the P
 ```
 
 There is no typecheck step — no mypy or pyright is configured — so "verified" here means **pytest
-and ruff, both green**. CI runs exactly that on Python 3.12 and 3.13, then builds the wheel,
+and ruff, both green**. CI runs exactly that on Python 3.12, 3.13 and 3.14, then builds the wheel,
 installs it into a clean venv and resolves the tool allowlists from it, so a module missing from the
 wheel fails the PR rather than a user's first install.
 
@@ -119,7 +119,7 @@ CI checks both scripts with `--check`, so a stale document fails the PR.
 The reference client. Use it to confirm a real MCP client sees what you think it does — pytest
 proves the handlers work, Inspector proves a client can use them.
 
-Requires **Node 22.19+**.
+Requires **Node 26**.
 
 ### CLI — scriptable, good for CI
 

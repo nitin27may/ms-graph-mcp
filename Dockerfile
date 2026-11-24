@@ -10,7 +10,7 @@
 #     -e GRAPH_MCP_RESOURCE_URL=https://graph-mcp.example.com/mcp \
 #     ms-graph-mcp
 
-ARG PYTHON_VERSION=3.13
+ARG PYTHON_VERSION=3.14
 
 # ─── build ────────────────────────────────────────────────────────────────────
 # Builds a wheel and installs it into a self-contained virtualenv, which is then
